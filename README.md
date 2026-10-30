@@ -124,6 +124,8 @@ pnpm test
 
 The security notes are in [docs/threat-model.md](docs/threat-model.md).
 
-## Network deployment
+## Sepolia
 
-This repository runs the stack against local Anvil. Publishing the verification page for anyone on the internet also requires a deployed contract, a public RPC endpoint with no API key in the client, a hosted build of `apps/web`, and product documents that a public IPFS gateway can fetch. Documents pinned only to the local Kubo node are not on public gateways by default.
+`ProductRegistry` is deployed on Sepolia, chain id `11155111`, at [`0x01E560E6F16D86b7764284476a3E57D013bF5840`](https://sepolia.etherscan.io/address/0x01E560E6F16D86b7764284476a3E57D013bF5840). The deploying account holds the admin, manufacturer, and recall roles. The deployment list in `apps/web/trusted-deployments.json` points the verification page at a public Sepolia RPC with no API key.
+
+A hosted copy of the web app, and product documents available from a public IPFS gateway, are still required before a verification link works for someone who is not running this stack. Documents pinned only to the local Kubo node are not on public gateways by default.

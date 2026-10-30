@@ -987,6 +987,7 @@ As of 30 October 2026, after the GitHub push:
 | 2026-10-30 | Packages 3, 4, and the integration files accepted. The local Anvil chain holds the demo batch, both handoffs, two reverted calls from account D, and a recall whose reason is "Damaged seal". The public page shows Recalled and Match for that batch. Indexer unit tests are 23 passed. Web unit tests are 10 passed. `CONFIRMATIONS` defaults to 0, and to 2 when `CHAIN_ID` is 11155111. The indexer listens on `127.0.0.1` unless `INDEXER_HOST` is set. Docker was not started because it needs the user's password. |
 | 2026-10-30 | The workspace was pushed to the private repository https://github.com/Ripper2005/ProofChain, commit `98f5636`, branch `master`. `.env`, Foundry `cache`, `out`, and `broadcast` stay untracked. Package 5 is the remaining work. |
 | 2026-10-30 | Sepolia deploy account is `0xC369d193b2C6594da0dEB59C484D906F3F69CFAB`. It holds 0.05 test ETH. For the solo public demo this address is the admin, the manufacturer, and the recaller. The private key is not stored in the repository. |
+| 2026-10-30 | Sepolia `ProductRegistry` is `0x01E560E6F16D86b7764284476a3E57D013bF5840`, deployed in block 12028140. That account holds admin, manufacturer, and recall. `trusted-deployments.json` marks it current and uses `https://ethereum-sepolia-rpc.publicnode.com`. The local Anvil entry stays for the old demo. The private key was not committed. |
 
 ## 22. Accepted from the first two packages
 

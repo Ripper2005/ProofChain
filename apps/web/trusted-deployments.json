@@ -5,8 +5,16 @@
       "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
       "startBlock": 1,
       "label": "local anvil",
-      "current": true,
+      "current": false,
       "rpcUrl": ""
+    },
+    {
+      "chainId": 11155111,
+      "address": "0x01E560E6F16D86b7764284476a3E57D013bF5840",
+      "startBlock": 12028140,
+      "label": "sepolia",
+      "current": true,
+      "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com"
     }
   ]
 }
