@@ -1,7 +1,5 @@
 # ProofChain
 
-[![tests](https://github.com/Ripper2005/ProofChain/actions/workflows/test.yml/badge.svg)](https://github.com/Ripper2005/ProofChain/actions/workflows/test.yml)
-
 A shared custody log for a product batch.
 
 When a shipment moves from a manufacturer to a distributor and then to a retailer, each company keeps its own spreadsheet. ProofChain puts the batch, the document commitment, the current custodian, and any recall on Ethereum, so those parties can check one record instead of reconciling three.
@@ -120,7 +118,7 @@ forge test --root contracts
 pnpm test
 ```
 
-`pnpm test` runs the metadata, pin, indexer, and web tests. Docker is not required. The same checks run in GitHub Actions.
+`pnpm test` runs the metadata, pin, indexer, and web tests. Docker is not required.
 
 The security notes are in [docs/threat-model.md](docs/threat-model.md).
 
