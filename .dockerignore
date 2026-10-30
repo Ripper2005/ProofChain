@@ -1,0 +1,11 @@
+.git
+**/.git
+**/node_modules
+**/.pnpm-store
+contracts/cache
+contracts/out
+contracts/lib
+**/.env
+**/.env.*
+**/dist
+*.md

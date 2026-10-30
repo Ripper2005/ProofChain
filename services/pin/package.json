@@ -1,0 +1,16 @@
+{
+  "name": "@proofchain/pin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prestart": "npm run build --prefix ../../packages/metadata",
+    "pretest": "npm run build --prefix ../../packages/metadata",
+    "start": "node --experimental-strip-types src/main.ts",
+    "test": "node --experimental-strip-types --test test/pin.test.ts"
+  },
+  "dependencies": {
+    "@proofchain/metadata": "file:../../packages/metadata",
+    "hono": "4.10.4"
+  }
+}

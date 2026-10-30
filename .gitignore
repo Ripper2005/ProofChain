@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store/
+.env
+.env.*
+!.env.example
+
+# Foundry build and local deploy receipts
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+
+# TypeScript build output
+dist/
+*.tsbuildinfo
+
+.DS_Store

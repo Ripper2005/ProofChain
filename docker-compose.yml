@@ -1,0 +1,171 @@
+name: proofchain
+
+# Local stack. Published ports stay on 127.0.0.1.
+# Anvil, Kubo, pin, and the indexer listen on 0.0.0.0 inside the container
+# because 127.0.0.1 there is the container itself, not the laptop.
+
+services:
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    # The image entrypoint is /bin/sh -c, which would drop these flags.
+    entrypoint: ["anvil"]
+    command: ["--host", "0.0.0.0", "--port", "8545", "--chain-id", "31337"]
+    ports:
+      - "127.0.0.1:8545:8545"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cast", "block-number", "--rpc-url", "http://127.0.0.1:8545"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 3s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-proofchain}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-proofchain}
+      POSTGRES_DB: ${POSTGRES_DB:-proofchain}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  ipfs:
+    image: ipfs/kubo:latest
+    ports:
+      - "127.0.0.1:5001:5001"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ipfs_data:/data/ipfs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ipfs", "--api", "/ip4/127.0.0.1/tcp/5001", "id"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+  pin:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM node:24-bookworm-slim
+        RUN npm install -g pnpm@12.16.1
+        WORKDIR /app
+        COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+        COPY packages/metadata/package.json packages/metadata/tsconfig.json packages/metadata/
+        COPY packages/metadata/src packages/metadata/src
+        COPY services/pin/package.json services/pin/
+        COPY services/pin/src services/pin/src
+        RUN pnpm install --frozen-lockfile --filter "@proofchain/metadata" --filter "@proofchain/pin..." \
+         && pnpm --dir packages/metadata build
+        ENV PIN_HOST=0.0.0.0 \
+            PORT=8788 \
+            IPFS_API_URL=http://ipfs:5001 \
+            CI=true
+        EXPOSE 8788
+        CMD ["node", "--experimental-strip-types", "services/pin/src/main.ts"]
+    environment:
+      PIN_HOST: "0.0.0.0"
+      PORT: "8788"
+      IPFS_API_URL: http://ipfs:5001
+    ports:
+      - "127.0.0.1:8788:8788"
+    restart: unless-stopped
+    depends_on:
+      ipfs:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - 'fetch("http://127.0.0.1:8788/metadata").then(() => process.exit(0)).catch(() => process.exit(1))'
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  indexer:
+    image: node:24-bookworm-slim
+    working_dir: /opt
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-proofchain}:${POSTGRES_PASSWORD:-proofchain}@postgres:5432/${POSTGRES_DB:-proofchain}
+      CHAIN_RPC_URL: http://anvil:8545
+      CHAIN_ID: "31337"
+      CONTRACT_ADDRESS: ${CONTRACT_ADDRESS:-}
+      START_BLOCK: ${START_BLOCK:-0}
+      CONFIRMATIONS: "0"
+      IPFS_API_URL: http://ipfs:5001
+      INDEXER_HOST: "0.0.0.0"
+      INDEXER_PORT: "8787"
+      PORT: "8787"
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:5173}
+      PIN_URL: http://pin:8788
+      POLL_INTERVAL_MS: "2000"
+      PNPM_STORE_DIR: /pnpm/store
+      CI: "true"
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - .:/src:ro
+      - indexer_pnpm_store:/pnpm/store
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      anvil:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        while [ ! -f /src/indexer/package.json ] || [ ! -f /src/indexer/src/main.ts ]; do
+          echo "waiting for indexer/package.json and indexer/src/main.ts"
+          sleep 5
+        done
+        npm install -g pnpm@12.16.1
+        rm -rf /opt/proofchain
+        mkdir -p /opt/proofchain
+        tar -C /src -cf /tmp/indexer-src.tar --exclude node_modules --exclude .git --exclude dist package.json pnpm-workspace.yaml pnpm-lock.yaml packages indexer
+        tar -C /opt/proofchain -xf /tmp/indexer-src.tar
+        rm -f /tmp/indexer-src.tar
+        if [ -d /src/contracts/out ]; then
+          tar -C /src -cf /tmp/indexer-out.tar contracts/out
+          tar -C /opt/proofchain -xf /tmp/indexer-out.tar
+          rm -f /tmp/indexer-out.tar
+        fi
+        cd /opt/proofchain
+        pnpm install --no-frozen-lockfile --filter "./indexer..." --filter "./packages/metadata"
+        if [ -f packages/metadata/package.json ]; then
+          pnpm --dir packages/metadata build
+        fi
+        if [ -z "$$CONTRACT_ADDRESS" ]; then
+          echo "CONTRACT_ADDRESS is empty. Deploy, write it to .env, then recreate the indexer."
+          sleep infinity
+        fi
+        exec pnpm --dir indexer start
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - 'fetch("http://127.0.0.1:8787/health").then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))'
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
+volumes:
+  postgres_data:
+  ipfs_data:
+  indexer_pnpm_store:

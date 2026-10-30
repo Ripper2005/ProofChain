@@ -1,0 +1,31 @@
+{
+  "name": "@proofchain/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate:abi": "node scripts/generate-abi.mjs",
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@proofchain/metadata": "file:../../packages/metadata",
+    "@tanstack/react-query": "5.90.5",
+    "qrcode": "1.5.4",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-router-dom": "7.9.4",
+    "viem": "2.57.13",
+    "wagmi": "2.18.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.9.1",
+    "@types/qrcode": "1.5.6",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "@vitejs/plugin-react": "5.1.0",
+    "typescript": "5.9.3",
+    "vite": "7.1.12"
+  }
+}
