@@ -4,7 +4,7 @@ ProofChain is a shared custody log for a product batch. Ethereum records who reg
 
 The chain records claims. It shows what was submitted and which wallet signed it. A manufacturer can register a false description. The chain then preserves that false claim and attributes it. Physical inspection and real identity processes sit outside the system. The chain does not prove the physical goods are genuine.
 
-The protocol is [MASTER_PLAN.md](../MASTER_PLAN.md). The Foundry tests are the executable specification. This file is the trust write-up.
+The Foundry tests are the executable specification for the contract. This document describes the trust assumptions around it.
 
 ## What an external account can try
 
