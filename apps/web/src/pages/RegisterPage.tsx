@@ -1,4 +1,4 @@
-import { canonicalize, hashMetadata, MetadataError, parseAndValidate } from "@proofchain/metadata";
+import { canonicalize, hashMetadata, parseAndValidate } from "@proofchain/metadata";
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
@@ -8,7 +8,7 @@ import { Row, Rows } from "../components/Rows.tsx";
 import { DEMO_DOCUMENT } from "../demo.ts";
 import { submitAction } from "../lib/actions.ts";
 import { currentDeployment } from "../lib/deployments.ts";
-import { contractErrorText, walletRejected } from "../lib/errors.ts";
+import { registrationFailureText } from "../lib/failures.ts";
 import { originIsLoopback, parseOrigin, verificationUrl } from "../lib/format.ts";
 import { pinBlob, pinMetadata } from "../lib/pin.ts";
 import type { Address, Hex } from "viem";
@@ -109,17 +109,7 @@ export function RegisterPage() {
       });
       await queryClient.invalidateQueries();
     } catch (error) {
-      if (error instanceof MetadataError) {
-        setMessage(`${error.code}: ${error.message}`);
-      } else if (pinned && walletRejected(error)) {
-        setMessage("The wallet rejected the request. The pin remains on IPFS, and this page will not offer a QR code.");
-      } else if (pinned) {
-        setMessage(
-          `${contractErrorText(error)} The pin remains on IPFS, and this page will not offer a QR code until a receipt succeeds.`,
-        );
-      } else {
-        setMessage(contractErrorText(error));
-      }
+      setMessage(registrationFailureText(error, pinned));
     } finally {
       setPending(false);
     }

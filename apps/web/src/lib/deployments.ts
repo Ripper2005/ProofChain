@@ -1,5 +1,5 @@
 import { getAddress, isAddress, type Address } from "viem";
-import rawFile from "../../trusted-deployments.json";
+import rawFile from "../../trusted-deployments.json" with { type: "json" };
 
 export type Deployment = {
   chainId: number;

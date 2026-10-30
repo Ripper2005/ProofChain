@@ -7,12 +7,13 @@ import {
   keccak256,
   type Address,
   type Hex,
-  type PublicClient,
+  type Log,
 } from "viem";
 import { productRegistryAbi } from "../contracts/ProductRegistry.ts";
 import { currentListedDeployment, findDeployment, readerUrl, type Deployment } from "./deployments.ts";
 import { fetchIpfsBytes, judgeDocument } from "./document.ts";
 import { contractErrorText } from "./errors.ts";
+import { READER_FAILURE } from "./failures.ts";
 import { asAddress, asBigint, castGetBatch } from "./format.ts";
 import { LogsUnavailable, readLogsInChunks } from "./logRange.ts";
 import { decodeProductLogs, historyDisagrees, logsForBatch, type ProductLog } from "./logs.ts";
@@ -77,34 +78,59 @@ export function describeTrust(chainId: number, contract: Address): Trust {
   return { kind: "earlier", label: matched.label, current: currentListedDeployment() };
 }
 
-export async function loadVerification(chainId: number, contract: Address, batchCode: string): Promise<VerifyResult> {
+type ReaderClient = {
+  getChainId(): Promise<number>;
+  readContract(parameters: {
+    address: Address;
+    abi: typeof productRegistryAbi;
+    functionName: string;
+    args?: readonly unknown[];
+  }): Promise<unknown>;
+  getBlockNumber(): Promise<bigint>;
+  getLogs(parameters: { address: Address; fromBlock: bigint; toBlock: bigint }): Promise<Log[]>;
+};
+
+export async function loadVerification(
+  chainId: number,
+  contract: Address,
+  batchCode: string,
+  io?: {
+    endpoint?: string | null;
+    client?: ReaderClient;
+    fetchBytes?: (cid: string) => Promise<Uint8Array | null>;
+  },
+): Promise<VerifyResult> {
   const trust = describeTrust(chainId, contract);
   if (!validateBatchCode(batchCode)) return { kind: "invalid-code", batchCode };
   const batchId = computeBatchId(batchCode);
-  const endpoint = readerUrl(chainId, contract);
+  const endpoint = io && "endpoint" in io ? (io.endpoint ?? null) : readerUrl(chainId, contract);
   if (!endpoint) return { kind: "cannot-read", chainId };
 
-  const client = createPublicClient({ transport: http(endpoint, { batch: false, timeout: 20_000 }) });
+  const client: ReaderClient =
+    io?.client ??
+    (createPublicClient({
+      transport: http(endpoint, { batch: false, timeout: 20_000 }),
+    }) as unknown as ReaderClient);
   let reported: number;
   try {
     reported = await client.getChainId();
   } catch {
-    return { kind: "rpc-error", message: "The site reader did not respond." };
+    return { kind: "rpc-error", message: READER_FAILURE };
   }
   if (reported !== chainId) return { kind: "cannot-read", chainId };
 
   const cast = castGetBatch(contract, batchId);
   let rawBatch: BatchStruct;
   try {
-    rawBatch = await client.readContract({
+    rawBatch = (await client.readContract({
       address: contract,
       abi: productRegistryAbi,
       functionName: "getBatch",
       args: [batchId],
-    });
+    })) as BatchStruct;
   } catch (error) {
     if (isTransportFailure(error)) {
-      return { kind: "rpc-error", message: "The site reader did not respond." };
+      return { kind: "rpc-error", message: READER_FAILURE };
     }
     return { kind: "absent", trust, errorText: contractErrorText(error), cast, batchId, chainId, contract };
   }
@@ -112,32 +138,35 @@ export async function loadVerification(chainId: number, contract: Address, batch
   const deployment = findDeployment(chainId, contract);
   const startBlock = deployment?.startBlock ?? 0n;
   const [pendingResult, historyResult, roleResult, logResult, bytes] = await Promise.all([
-    readOptional(() =>
-      client.readContract({
-        address: contract,
-        abi: productRegistryAbi,
-        functionName: "getPendingTransfer",
-        args: [batchId],
-      }),
+    readOptional(
+      () =>
+        client.readContract({
+          address: contract,
+          abi: productRegistryAbi,
+          functionName: "getPendingTransfer",
+          args: [batchId],
+        }) as Promise<PendingStruct>,
     ),
-    readOptional(() =>
-      client.readContract({
-        address: contract,
-        abi: productRegistryAbi,
-        functionName: "getCustodyHistory",
-        args: [batchId],
-      }),
+    readOptional(
+      () =>
+        client.readContract({
+          address: contract,
+          abi: productRegistryAbi,
+          functionName: "getCustodyHistory",
+          args: [batchId],
+        }) as Promise<HistoryStruct[]>,
     ),
-    readOptional(() =>
-      client.readContract({
-        address: contract,
-        abi: productRegistryAbi,
-        functionName: "hasRole",
-        args: [MANUFACTURER_ROLE, rawBatch.manufacturer],
-      }),
+    readOptional(
+      () =>
+        client.readContract({
+          address: contract,
+          abi: productRegistryAbi,
+          functionName: "hasRole",
+          args: [MANUFACTURER_ROLE, rawBatch.manufacturer],
+        }) as Promise<boolean>,
     ),
     loadDecodedLogs(client, contract, startBlock),
-    fetchIpfsBytes(rawBatch.metadataCid),
+    (io?.fetchBytes ?? fetchIpfsBytes)(rawBatch.metadataCid),
   ]);
 
   const historyRows = historyResult.ok ? historyResult.value.map(toHandoff) : [];
@@ -291,7 +320,7 @@ type HistoryStruct = {
   timestamp: bigint;
 };
 
-async function loadDecodedLogs(client: PublicClient, contract: Address, startBlock: bigint) {
+async function loadDecodedLogs(client: ReaderClient, contract: Address, startBlock: bigint) {
   try {
     const head = await client.getBlockNumber();
     const logs = await readLogsInChunks(

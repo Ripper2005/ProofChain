@@ -1,6 +1,6 @@
 # ProofChain master plan
 
-Status: packages 1 and 2 accepted on 30 October 2026. Web and indexer are next.
+Status: packages 1 through 4 and the integration files are accepted. Package 5 is next. The private repository is https://github.com/Ripper2005/ProofChain.
 Last updated: 30 October 2026.
 The product is unchanged. Build quality is not tied to a calendar date. Every package in section 18 is finished to the spec, including the indexer, the threat model, Slither, CI, and an honest Sepolia path.
 Repository root: `/home/harsha/Documents/Blockchain Project/`.
@@ -954,9 +954,16 @@ The local demo in package 3 is the gate for package 5, because the write-up desc
 
 ## 19. Current machine
 
-Re-check before relying on this. The 29 October snapshot is stale.
+Re-check before relying on this.
 
-As of 30 October 2026, packages 1 and 2 are in the tree and their tests have been re-run. Foundry 1.8.6 is installed in the user home. The workspace has a git repository, and `contracts/` also has a nested `.git` that section 22 tells the integration brief to remove. Web, indexer, Compose, and the root workspace files are not in place yet. Docker was not running on 29 October. Confirm the daemon before using Compose.
+As of 30 October 2026, after the GitHub push:
+
+- Packages 1 through 4 and the integration files are accepted. `master` on https://github.com/Ripper2005/ProofChain is commit `98f5636`. There is no `README.md`, no `docs/threat-model.md`, no `.github` workflow, and no Sepolia deployment.
+- Foundry 1.8.6 is in the user home. The nested `contracts/.git` is gone. Foundry libraries are vendored in `contracts/lib`.
+- Host processes that were up: Anvil on `127.0.0.1:8545`, pin on `127.0.0.1:8788`, Kubo on `127.0.0.1:5001` and `127.0.0.1:8080`, Vite on `0.0.0.0:5173`. Postgres and the indexer were not listening. The Docker daemon was down and starting it needs the user's password.
+- The local Anvil chain already contains the demo batch `PCB-2026-001`, both handoffs, two reverted calls from account D, and a recall with reason "Damaged seal". The public page showed Recalled and Match.
+- `.env` exists locally and is gitignored. Do not commit it. `PRIVATE_KEY` in `.env.example` is empty.
+- The Sepolia deploy account is `0xC369d193b2C6594da0dEB59C484D906F3F69CFAB`. On 30 October 2026 it held 0.05 Sepolia ETH, chain id 11155111, nonce 0. The private key stays in the user's wallet and in a local `.env` at deploy time. It is not written into this file.
 
 ## 20. Decision log
 
@@ -978,12 +985,14 @@ As of 30 October 2026, packages 1 and 2 are in the tree and their tests have bee
 | 2026-10-29 | Third review. Proxy POST requires a loopback TCP peer and a localhost Host. JSON-RPC batches are rejected in full, and `/rpc` has no WebSocket upgrade. The verification page compares `eth_chainId` with the URL and chunks `getLogs`. Client code does not read an RPC secret. The QR origin is an editable field. Pin lives in `services/pin`. Contract and pin run in parallel. Web and indexer run in parallel after the ABI exists. The local demo does not wait on the indexer. |
 | 2026-10-30 | Packages 1 and 2 accepted after `forge test` (28 passed) and the Node suites (5 and 7 passed). Golden batch id and metadata hash match. `ZeroAddress` is only a zero admin. A zero recipient and a self-handoff are `InvalidRecipient`. Propose and cancel check the custodian before the pending handoff. Accept checks that a handoff is pending before it checks the recipient. `registerBatch` checks the code, then a duplicate id, then the hash, then the CID, after `onlyRole`. The deploy script reverts with `AdminKeyMismatch(address,address)`. Metadata strings must already be trimmed. Package names are `@proofchain/metadata` and `@proofchain/pin`. Pin listens on `127.0.0.1:8788`. |
 | 2026-10-30 | Packages 3, 4, and the integration files accepted. The local Anvil chain holds the demo batch, both handoffs, two reverted calls from account D, and a recall whose reason is "Damaged seal". The public page shows Recalled and Match for that batch. Indexer unit tests are 23 passed. Web unit tests are 10 passed. `CONFIRMATIONS` defaults to 0, and to 2 when `CHAIN_ID` is 11155111. The indexer listens on `127.0.0.1` unless `INDEXER_HOST` is set. Docker was not started because it needs the user's password. |
+| 2026-10-30 | The workspace was pushed to the private repository https://github.com/Ripper2005/ProofChain, commit `98f5636`, branch `master`. `.env`, Foundry `cache`, `out`, and `broadcast` stay untracked. Package 5 is the remaining work. |
+| 2026-10-30 | Sepolia deploy account is `0xC369d193b2C6594da0dEB59C484D906F3F69CFAB`. It holds 0.05 test ETH. For the solo public demo this address is the admin, the manufacturer, and the recaller. The private key is not stored in the repository. |
 
 ## 22. Accepted from the first two packages
 
 These choices were open in the plan. The implementations made them, the tests pass, and later packages use them as written.
 
-- `contracts/` currently contains its own `.git` directory, so the workspace repository does not track the Solidity. The integration brief deletes that nested `.git` directory and leaves `contracts/lib` and the source in place. It does not create a commit.
+- The nested `contracts/.git` directory was removed before the first commit. `contracts/lib` stays in the repository as vendored source. Do not delete it and do not turn it back into a nested repository.
 - Pin errors are JSON `{ "error", "message" }`. `POST /metadata` accepts only `canonical` and `batchCode`. An empty blob is 400, a body over 5 MB is 413, and a Kubo failure is 502.
 - Kubo is called with `cid-version=1` and `pin=true`.
 - Hono is only the pin router. Unused Hono dependency paths reported by `npm audit` are not a reason to mount extra middleware.

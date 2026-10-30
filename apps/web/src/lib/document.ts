@@ -52,7 +52,8 @@ export function judgeDocument(
 }
 
 export function ipfsFileUrl(cid: string): string {
-  const configured = import.meta.env.VITE_IPFS_GATEWAY_URL?.trim() ?? "";
+  const env = import.meta.env as { VITE_IPFS_GATEWAY_URL?: string } | undefined;
+  const configured = env?.VITE_IPFS_GATEWAY_URL?.trim() ?? "";
   const path = `/ipfs/${encodeURIComponent(cid)}`;
   if (!configured) return path;
   return `${configured.replace(/\/$/, "")}${path}`;

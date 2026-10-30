@@ -6,6 +6,7 @@ import { productRegistryAbi } from "../contracts/ProductRegistry.ts";
 import { supportedChainId, wagmiConfig, type WalletChainId } from "../wagmi.ts";
 import { currentDeployment } from "./deployments.ts";
 import { contractErrorText, walletRejected } from "./errors.ts";
+import { receiptAccepted, REVERTED_RECEIPT } from "./failures.ts";
 
 export type ContractAction =
   | { functionName: "registerBatch"; args: readonly [string, Hex, string] }
@@ -59,6 +60,7 @@ export async function submitAction(input: {
   walletChainId: number | undefined;
   switchChain: (chainId: WalletChainId) => Promise<unknown>;
   write: WriteFn;
+  confirmReceipt?: (hash: Hex, chainId: number) => Promise<{ status: "success" | "reverted" }>;
 }): Promise<Hex> {
   const current = currentDeployment();
   if (!current) throw new Error("No current deployment is configured.");
@@ -69,10 +71,10 @@ export async function submitAction(input: {
     await input.switchChain(current.chainId);
   }
   const hash = await writeAction(input.write, current.address, current.chainId, input.account, input.action);
-  const receipt = await waitForTransactionReceipt(wagmiConfig, { hash, chainId: current.chainId });
-  if (receipt.status !== "success") {
-    throw new Error("The transaction reverted. The contract did not apply this action.");
-  }
+  const receipt = input.confirmReceipt
+    ? await input.confirmReceipt(hash, current.chainId)
+    : await waitForTransactionReceipt(wagmiConfig, { hash, chainId: current.chainId });
+  if (!receiptAccepted(receipt.status)) throw new Error(REVERTED_RECEIPT);
   return hash;
 }
 

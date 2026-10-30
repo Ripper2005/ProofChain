@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 import { getAddress, isAddress, type Address, type Hex } from "viem";
 import { Row, Rows } from "../components/Rows.tsx";
 import { ipfsFileUrl } from "../lib/document.ts";
+import { DOCUMENT_UNAVAILABLE, READER_FAILURE } from "../lib/failures.ts";
 import { formatUnix, parseChainId } from "../lib/format.ts";
 import { loadVerification, type Trust, type VerifyResult } from "../lib/reader.ts";
 
@@ -48,7 +49,7 @@ export function VerifyPage() {
       {query.isPending ? <p>Reading the contract through this site&apos;s reader.</p> : null}
       {query.isError ? (
         <p className="revert" role="alert">
-          The site reader did not respond.
+          {READER_FAILURE}
         </p>
       ) : null}
       {query.data ? <ResultView result={query.data} /> : null}
@@ -158,7 +159,7 @@ function PresentView({ result }: { result: Extract<VerifyResult, { kind: "presen
 
       <h2>Product document</h2>
       {result.verdict === "unavailable" ? (
-        <p data-testid="document-unavailable">The product document is unavailable. Custody, status, hashes, and transactions above still come from the contract.</p>
+        <p data-testid="document-unavailable">{DOCUMENT_UNAVAILABLE}</p>
       ) : null}
       {result.verdict === "mismatch" ? <p>{result.mismatchReason}</p> : null}
       {result.document ? (
