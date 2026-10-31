@@ -106,6 +106,19 @@ test("a reader on another fork disagrees on the block hash", async () => {
   assert.deepEqual(read.reports[2]?.differs, ["block hash"]);
 });
 
+test("readers that return the same block hash but different state roots do not agree", async () => {
+  const chain = goldenChain(10n);
+  const read = await readAgreement(
+    [
+      fakeReader("http://one", chain),
+      fakeReader("http://wrong-state-root", chain, { headerStateRoot: `0x${"11".repeat(32)}` }),
+    ],
+    TARGET,
+  );
+  assert.equal(read.agreement.holds, false);
+  assert.deepEqual(read.reports[1]?.differs, ["state root"]);
+});
+
 test("two readers that split evenly have no majority, and neither agrees", async () => {
   const chain = goldenChain(10n);
   const read = await readAgreement(

@@ -14,7 +14,7 @@ import {
 } from "../src/lib/deployments.ts";
 
 const LOCAL = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-const SEPOLIA = "0x01E560E6F16D86b7764284476a3E57D013bF5840";
+const SEPOLIA = "0x085156D33591d8DCce11703017D9B078bdEb837b";
 
 test("the web app reads the committed trusted-deployments.json through the verifier", () => {
   const list = trustedDeployments();

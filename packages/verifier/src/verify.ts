@@ -14,6 +14,7 @@ import { revertText } from "./errors.ts";
 import { asAddress, castGetBatch, sameHex } from "./format.ts";
 import { DEFAULT_LOG_SPAN, historyDisagrees, loadBatchLogs, type ProductLog } from "./logs.ts";
 import { httpReader, type FetchLike, type Reader } from "./rpc.ts";
+import { checkBatchStorageProof, type StorageProofReport } from "./storage-proof.ts";
 import {
   timelineFromContract,
   timelineFromLogs,
@@ -69,6 +70,7 @@ export type RegisteredOutcome = {
   recall: RecallRecord | null;
   timeline: TimelineStep[];
   document: DocumentReport;
+  storageProof: StorageProofReport;
 };
 
 export type Outcome =
@@ -165,7 +167,7 @@ export async function verifyBatch(input: VerifyInput): Promise<VerificationResul
 
   const { batch } = decoded;
   const fromBlock = findIn(input.deployments, input.chainId, contract)?.startBlock ?? 0n;
-  const [logLoad, ipfs] = await Promise.all([
+  const [logLoad, ipfs, storageProof] = await Promise.all([
     loadBatchLogs(
       read.recordReaders,
       { contract, batchId, fromBlock, toBlock: read.agreement.anchor },
@@ -177,6 +179,15 @@ export async function verifyBatch(input: VerifyInput): Promise<VerificationResul
       gateways: input.gateways,
       fetch: send,
       timeoutMs: input.gatewayTimeoutMs,
+    }),
+    checkBatchStorageProof({
+      reader: read.agreement.holds ? (read.recordReaders[0] ?? null) : null,
+      contract,
+      batchId,
+      stateRoot: read.record.stateRoot,
+      anchor: read.agreement.anchor,
+      currentCustodian: batch.currentCustodian,
+      status: batch.status === "active" ? 1 : batch.status === "recalled" ? 2 : 0,
     }),
   ]);
 
@@ -226,6 +237,7 @@ export async function verifyBatch(input: VerifyInput): Promise<VerificationResul
           pending,
         }),
     document: documentReport({ onChain, ipfs, metadataHash: batch.metadataHash, batchCode: input.batchCode, batchId }),
+    storageProof,
   };
   return finish(withReaders, outcome);
 }

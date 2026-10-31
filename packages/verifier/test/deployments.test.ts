@@ -16,12 +16,11 @@ import {
 
 const LOCAL = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 const OLD_LOCAL = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
-const SEPOLIA = "0x01E560E6F16D86b7764284476a3E57D013bF5840";
+const SEPOLIA = "0x085156D33591d8DCce11703017D9B078bdEb837b";
 const UNLISTED = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
 const DEV_RPC = "http://localhost:5173/rpc";
 const SEPOLIA_READERS = [
   "https://ethereum-sepolia-rpc.publicnode.com",
-  "https://1rpc.io/sepolia",
   "https://sepolia.gateway.tenderly.co",
   "https://sepolia.rpc.thirdweb.com",
   "https://0xrpc.io/sep",
@@ -83,7 +82,7 @@ test("trust is classified per chain and the address case does not matter", () =>
     kind: "current",
     label: "chain 31337 0x5FbD",
   });
-  assert.deepEqual(classifyTrust(sample, 11155111, SEPOLIA), { kind: "current", label: "chain 11155111 0x01E5" });
+  assert.deepEqual(classifyTrust(sample, 11155111, SEPOLIA), { kind: "current", label: "chain 11155111 0x0851" });
 
   const earlier = classifyTrust(sample, 31337, OLD_LOCAL);
   assert.equal(earlier.kind, "earlier");

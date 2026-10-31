@@ -3,6 +3,7 @@ import { describeTrust } from "./deployments.ts";
 import type { DocumentCheck, GatewayAttempt } from "./document.ts";
 import { formatUnix } from "./format.ts";
 import type { TimelineStep } from "./timeline.ts";
+import type { StorageProofReport } from "./storage-proof.ts";
 import { SEAL_RULE, type RegisteredOutcome, type VerificationResult } from "./verify.ts";
 
 export function agreementSummary(agreement: Agreement): string {
@@ -115,7 +116,7 @@ export function renderReport(result: VerificationResult): string {
       lines.push(`  Contract error: ${outcome.errorText}`);
       break;
     case "registered":
-      renderRegistered(lines, outcome);
+      renderRegistered(lines, outcome, result.agreement.anchor);
       break;
   }
 
@@ -133,7 +134,7 @@ export function renderReport(result: VerificationResult): string {
   return `${lines.join("\n")}\n`;
 }
 
-function renderRegistered(lines: string[], outcome: RegisteredOutcome) {
+function renderRegistered(lines: string[], outcome: RegisteredOutcome, anchor: bigint | null) {
   const { batch } = outcome;
   const role = outcome.manufacturerRole === null ? "could not be read" : outcome.manufacturerRole ? "held" : "not held";
   lines.push("Batch");
@@ -180,6 +181,31 @@ function renderRegistered(lines: string[], outcome: RegisteredOutcome) {
   const from = document.source === "on-chain" ? " (on-chain document)" : document.source === "ipfs" ? " (IPFS copy)" : "";
   lines.push(`  Document verdict: ${document.verdict.toUpperCase()}${from}`);
   if (document.reason) lines.push(`  ${document.reason}`);
+
+  renderStorageProof(lines, outcome.storageProof, anchor);
+}
+
+function renderStorageProof(lines: string[], proof: StorageProofReport, anchor: bigint | null) {
+  lines.push("", "Storage proof (additional check)");
+  const statusText = {
+    verified: "verified against the anchor state root; both values match the contract read",
+    mismatch: "proof is valid, but a proven value differs from the contract read",
+    invalid: "invalid; the proof could not be verified",
+    unavailable: "unavailable",
+  }[proof.status];
+  lines.push(`  ${statusText}`);
+  if (proof.reader) lines.push(`  Reader       ${proof.reader}`);
+  if (anchor !== null) lines.push(`  Anchor       block ${anchor}`);
+  lines.push(`  State root   ${proof.stateRoot}`);
+  const custodianCheck = proof.custodianMatches === true ? "match" : proof.custodianMatches === false ? "mismatch" : "not checked";
+  const statusCheck = proof.statusMatches === true ? "match" : proof.statusMatches === false ? "mismatch" : "not checked";
+  lines.push(`  Custodian    ${proof.custodian ?? "unavailable"} (${custodianCheck})`);
+  lines.push(`  Custodian slot ${proof.custodianSlot}`);
+  const statusValue = proof.provenStatus === null ? "unavailable" : `${proof.provenStatus} (low byte of ${proof.statusWord})`;
+  lines.push(`  Status       ${statusValue} (${statusCheck})`);
+  lines.push(`  Status slot  ${proof.statusSlot}`);
+  if (proof.detail) lines.push(`  ${proof.detail}`);
+  lines.push("  This check is separate from the green seal and does not affect it.");
 }
 
 function mark(value: boolean): string {

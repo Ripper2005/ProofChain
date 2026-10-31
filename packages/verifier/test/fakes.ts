@@ -8,13 +8,17 @@ import {
   encodeEventTopics,
   encodeFunctionResult,
   keccak256,
+  bytesToHex,
   numberToHex,
+  padHex,
   sha256,
+  toRlp,
   toBytes,
   type AbiEvent,
   type Address,
   type Hex,
 } from "viem";
+import { batchStorageSlots } from "../src/storage-proof.ts";
 import {
   parseDeployments,
   productRegistryAbi,
@@ -87,8 +91,8 @@ export function txHash(label: string): Hex {
   return keccak256(toBytes(`tx ${label}`));
 }
 
-export function blockHash(number: bigint, fork = "main"): Hex {
-  return keccak256(toBytes(`${fork} block ${number}`));
+export function blockHash(number: bigint, fork = "main", stateRoot = "0x" as Hex): Hex {
+  return keccak256(toBytes(`${fork} block ${number} state root ${stateRoot}`));
 }
 
 export function eventLog(
@@ -215,9 +219,13 @@ export type ReaderOptions = {
   fail?: (method: string, params: readonly unknown[]) => Error | null;
   edit?: (batch: BatchState) => BatchState;
   calls?: Array<{ method: string; params: readonly unknown[] }>;
+  proofEdit?: (proof: Record<string, unknown>) => unknown;
+  headerStateRoot?: Hex;
 };
 
 export function fakeReader(url: string, chain: FakeChain, options: ReaderOptions = {}): Reader {
+  let proofState: Promise<FakeProofState> | null = null;
+  const getProofState = () => (proofState ??= makeProofState(chain));
   return {
     url,
     async request(method, params) {
@@ -229,8 +237,18 @@ export function fakeReader(url: string, chain: FakeChain, options: ReaderOptions
           return numberToHex(options.chainId ?? chain.chainId);
         case "eth_blockNumber":
           return numberToHex(options.head ?? chain.head);
-        case "eth_getBlockByNumber":
-          return { number: params[0], hash: blockHash(BigInt(params[0] as string), options.fork) };
+        case "eth_getBlockByNumber": {
+          const proofState = await getProofState();
+          return {
+            number: params[0],
+            hash: blockHash(BigInt(params[0] as string), options.fork, proofState.stateRoot),
+            stateRoot: options.headerStateRoot ?? proofState.stateRoot,
+          };
+        }
+        case "eth_getProof": {
+          const proof = await (await getProofState()).getProof(params[1]);
+          return options.proofEdit ? options.proofEdit(proof) : proof;
+        }
         case "eth_call":
           return call(chain, (params[0] as { data: Hex }).data, options.edit);
         case "eth_getLogs":
@@ -240,6 +258,68 @@ export function fakeReader(url: string, chain: FakeChain, options: ReaderOptions
       }
     },
   };
+}
+
+type FakeProofState = {
+  stateRoot: Hex;
+  getProof(slots: unknown): Promise<Record<string, unknown>>;
+};
+
+async function makeProofState(chain: FakeChain): Promise<FakeProofState> {
+  const { Trie } = await import("@ethereumjs/trie");
+  const storageTrie = new Trie({ useKeyHashing: true });
+  const values = new Map<string, Hex>();
+  for (const [batchId, batch] of chain.batches) {
+    const slots = batchStorageSlots(batchId);
+    const custodianWord = padHex(batch.currentCustodian, { size: 32 }) as Hex;
+    const statusWord = numberToHex(BigInt(batch.status), { size: 32 });
+    values.set(slots.custodian.toLowerCase(), custodianWord);
+    values.set(slots.status.toLowerCase(), statusWord);
+    await storageTrie.put(toBytes(slots.custodian), toRlp(minimalBytes(BigInt(custodianWord)), "bytes"));
+    await storageTrie.put(toBytes(slots.status), toRlp(minimalBytes(BigInt(statusWord)), "bytes"));
+  }
+
+  const codeHash = keccak256(toBytes("fake ProductRegistry runtime"));
+  const account = toRlp([new Uint8Array(), new Uint8Array(), storageTrie.root(), toBytes(codeHash)], "bytes");
+  const stateTrie = new Trie({ useKeyHashing: true });
+  await stateTrie.put(toBytes(CONTRACT), account);
+  const stateRoot = bytesToHex(stateTrie.root()) as Hex;
+  const accountProof = (await stateTrie.createProof(toBytes(CONTRACT))).map((node) => bytesToHex(node));
+  const entryProofs = new Map<string, Hex[]>();
+  for (const key of values.keys()) {
+    const proof = (await storageTrie.createProof(toBytes(key as Hex))).map((node) => bytesToHex(node));
+    entryProofs.set(key, proof as Hex[]);
+  }
+
+  return {
+    stateRoot,
+    async getProof(requested) {
+      if (!Array.isArray(requested)) throw new Error("fake eth_getProof expected storage keys");
+      const storageProof = requested.map((key) => {
+        const normalized = typeof key === "string" ? key.toLowerCase() : "";
+        const word = values.get(normalized);
+        const proof = entryProofs.get(normalized);
+        if (!word || !proof || typeof key !== "string") throw new Error("fake eth_getProof received an unknown storage key");
+        return { key, value: numberToHex(BigInt(word)), proof };
+      });
+      return {
+        address: CONTRACT.toLowerCase(),
+        accountProof,
+        balance: "0x0",
+        codeHash,
+        nonce: "0x0",
+        storageHash: bytesToHex(storageTrie.root()),
+        storageProof,
+      };
+    },
+  };
+}
+
+function minimalBytes(value: bigint): Uint8Array {
+  if (value === 0n) return new Uint8Array();
+  let hex = value.toString(16);
+  if (hex.length % 2 !== 0) hex = `0${hex}`;
+  return toBytes(`0x${hex}`);
 }
 
 export function unreachableReader(url: string, calls?: string[]): Reader {

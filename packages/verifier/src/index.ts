@@ -10,5 +10,6 @@ export * from "./logs.ts";
 export * from "./report.ts";
 export * from "./roles.ts";
 export * from "./rpc.ts";
+export * from "./storage-proof.ts";
 export * from "./timeline.ts";
 export * from "./verify.ts";

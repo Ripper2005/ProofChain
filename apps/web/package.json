@@ -2,6 +2,9 @@
   "name": "@proofchain/web",
   "version": "0.0.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "type": "module",
   "scripts": {
     "generate:abi": "node scripts/generate-abi.mjs",

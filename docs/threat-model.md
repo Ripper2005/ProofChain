@@ -50,7 +50,7 @@ IPFS availability is a trust and operations point. The CID and the hash let a re
 
 When the document fetch fails, the page still shows the on-chain custody, status, hashes, and transactions, and it shows the product document as unavailable. It does not invent the missing document. Unavailable is the failure a reader sees when the gateway cannot be reached. An image or certificate that fails to load does not by itself fail the document hash. Only the canonical JSON bytes are the commitment.
 
-The pin routes are an operator endpoint. They are reached through the dev proxy or localhost. They are not a public pinning product. The only size controls are 64 KiB for the canonical document and 5 MB for the optional file.
+The pin routes are an operator endpoint. They are reached through the dev proxy or localhost. They are not a public pinning product. The canonical document is limited to 4 KiB; the optional file is limited to 5 MB.
 
 ## What a copied QR label does and does not prove
 
@@ -94,21 +94,31 @@ The contract is not upgradeable. A wrong rule is fixed by deploying a new contra
 
 Metadata is not edited in place. There is no update function. A correction is a new batch and, when appropriate, a recall of the old one. Confirmed registrations stay in the history.
 
-## The LAN reader
+## The hosted reader and reader agreement
 
-The page's reader is not the chain. A phone on the LAN reads through the laptop's `/rpc` proxy. The page says so and gives a `cast call` the audience can run against a node they choose. That `cast call`, and on chain id `11155111` the block explorer links, are the independent path.
+The hosted site is a trust point: whoever can change its JavaScript can change what it displays, including the green seal. Its content security policy restricts network destinations, but does not prove the deployed code is honest. The hosted verifier asks four configured Sepolia readers for a common anchor block and compares their answers. Agreement makes a single broken or dishonest reader easier to notice; it is not proof of Ethereum consensus. Providers can share infrastructure, be misconfigured, or fail together. The verifier reports which readers answered and does not turn silence into "batch missing."
 
-Sepolia is not deployed, so the explorer links have not been exercised. The LAN demo is the one that has been exercised, and on that demo the independent check is the `cast call` against a node the reader chooses. The Anvil node on this computer is `http://127.0.0.1:8545`.
+The Sepolia verifier was exercised from the hosted site and the independent `pnpm verify-batch` CLI. The CLI can use readers selected by the operator; `cast call` and a block explorer are additional independent paths. These paths still depend on the reader or explorer chosen and on the reader trusting Sepolia's consensus. A person who needs stronger assurance can run their own node and verify the contract and logs directly.
 
-`/rpc` is a read-only allowlist. It rejects `eth_sendTransaction`, `eth_sendRawTransaction`, `eth_sign`, `personal_*`, and `anvil_*`. A JSON-RPC batch that mixes an allowed call with a disallowed call is rejected in full. There is no WebSocket proxy on `/rpc`. A tunnel does not become a way to send Anvil transactions.
+The repository's verifier additionally requests an EIP-1186 account proof and storage proofs for the `currentCustodian` and `status` slots from one agreeing reader. The account proof is verified against the `stateRoot` returned by the readers at the anchor; the storage proofs are verified against the storage root recovered from that proven account. The expected slots follow the v2 storage layout. A valid proof whose values disagree with `getBatch` is reported as a mismatch, and a malformed or tampered proof is rejected. The result is shown separately and never changes the green seal. If reader agreement is absent or `eth_getProof` is unavailable, the check is unavailable.
+
+This is not a light client. The verifier does not recompute the block hash from the header fields or verify the state root against Ethereum consensus. It shows that the proved values are included under the state root the RPC readers reported; the reader agreement, trusted deployment list, and website remain trust points.
+
+In local development, the browser uses the dev server's read-only `/rpc` proxy to Anvil. It rejects `eth_sendTransaction`, `eth_sendRawTransaction`, `eth_sign`, `personal_*`, and `anvil_*`. A JSON-RPC batch that mixes an allowed call with a disallowed call is rejected in full. There is no WebSocket proxy on `/rpc`. A tunnel does not become a way to send Anvil transactions. Wallet writes go directly to the wallet's configured chain RPC.
+
+The phone was checked against the hosted verification URL over Wi-Fi. Mobile-data-only access was not tested because mobile data was unavailable. The hosted flow itself contacts Vercel, public Sepolia readers, and public IPFS gateways; it does not rely on the laptop's Anvil, Kubo, pin service, or indexer.
 
 ## Custody history is unbounded
 
 Custody history is unbounded in this version. The demo has two hops. A long ping-pong between two custodians can grow the on-chain array. This version does not add a cap.
 
-## Who pays gas
+## Who pays gas and what Sepolia cost
 
-The wallet that submits the transaction pays the gas. This demo uses test ETH, not mainnet funds. On the local stack that test ETH is Anvil's development balance. Sepolia is not deployed, and this repository does not contain a funded testnet key.
+The wallet that submits a transaction pays the gas. The live demo uses Sepolia test ETH, not mainnet funds. Account A deployed v2 and holds the admin, manufacturer, and recall roles; B and C accepted custody transfers from their own wallets. No funded Sepolia key is in the repository.
+
+Measured v2 gas on Sepolia: creation used 10,501,466 gas; each role grant used 133,541; a 234-byte rehearsal registration used 935,219; proposals used 243,946; the two accepts used 365,611 and 267,691; and recall used 37,074. At the observed effective prices, the creation cost about 0.00105015 Sepolia ETH, each grant 0.00001335, and the R01 registration 0.00009352. The first and second handoff gas costs varied with network conditions: about 0.00002439 for A's proposal, 0.00054842 for B's acceptance, 0.00036592 for B's proposal, and 0.00040154 for C's acceptance. Recall cost about 0.00000371. These are one-time observations, not fee quotes.
+
+Sepolia activated repriced state creation in October 2026: runtime code deployment costs about 1,542 gas per byte rather than 200, and a new storage slot about 111,000 gas rather than about 22,000. Anvil and Forge do not model these Sepolia rules. The v2 creation estimate was 10,400,921 gas from Sepolia readers; the actual deployment consumed 10,501,466 with a 12,481,105 limit. Use Sepolia's own estimate plus a margin. Transfers to brand-new wallets were also observed at about 204,600 gas; ordinary local estimates can be misleading for first-time account creation.
 
 ## What the page shows when a call fails
 
@@ -124,16 +134,20 @@ Confidential data does not go on the public chain. Names in the demo document ar
 
 ## Slither
 
-Slither 0.11.6 was installed with `uv` into a Python 3.12 environment and run from `contracts/` on 30 October 2026:
+Slither 0.11.6 was installed with `uv` into a Python 3.12 environment and run against v2 from `contracts/` on 31 October 2026:
 
 ```sh
-slither . --filter-paths lib
+uvx --python 3.12 --from slither-analyzer==0.11.6 slither . --filter-paths lib
 ```
 
-Foundry compiled the project. Slither's human summary reported one source contract, `ProductRegistry`, 205 source lines, five dependency contracts, 104 dependency lines, and zero assembly lines. It reported zero optimization issues, zero informational issues, zero low issues, zero medium issues, and zero high issues.
+Foundry compiled the project. Slither analyzed six contracts with 102 detectors and reported zero results.
 
 There is no Slither finding to accept. The limits in this file, including the single admin key, the unbounded custody history, and the lack of a reentrancy guard, are properties of this version. The contract has no external calls, so it does not use a reentrancy guard. Slither did not flag them, and they remain accepted limits rather than tool findings. A run that cannot install the tool would be a gap. This run completed. The Foundry tests remain the executable specification.
 
-## What is not in place
+## Current deployment and remaining limits
 
-The LAN demo is the one that has been exercised. A demo that survives the laptop leaving needs hosted files, a keyless public RPC, and pins a public gateway can fetch. None of those are done. `rpcUrl` in `trusted-deployments.json` is empty. Sepolia is not deployed. Local Kubo pins are not a public gateway.
+V2 is deployed on Sepolia at `0x085156D33591d8DCce11703017D9B078bdEb837b`. The hosted app is https://proofchain-snowy.vercel.app. Four configured public readers and two public IPFS gateways are allowed by the hosted policy. `PCB-2026-R01` is recalled after two accepted handoffs; `PCB-2026-R02` is active with account A. Both documents are pinned publicly. The hosted R01 verifier and CLI reported document match, IPFS copy match, and reader agreement. The repository CLI independently verified R02's account, custodian, and status proofs against the anchor state root at block 12034103. The Package 13 proof UI is deployed on the hosted site. Contract source has not been published on Sourcify.
+
+The public verifier does not depend on the PostgreSQL indexer. The indexer is a convenience for dashboards and can be unavailable or behind. Storage proofs remain relative to the RPC-reported state root and do not replace a consensus light client.
+
+Log retention is another operational limit. The registration event carries the canonical document, and logs provide transaction links and the public timeline. A provider that prunes old logs can make event-based details unavailable even though contract state remains readable. The IPFS copy is an independent copy of the document, not a guarantee that gateways or pins remain available forever. The CLI and hosted page report unavailable data rather than inventing it.

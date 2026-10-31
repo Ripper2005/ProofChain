@@ -8,6 +8,7 @@ import {
   type DocumentReport,
   type RegisteredOutcome,
   type SealConditions,
+  type StorageProofReport,
   type TimelineStep,
   type VerificationResult,
 } from "@proofchain/verifier";
@@ -186,6 +187,7 @@ function RegisteredView({ result, outcome }: { result: VerificationResult; outco
       </Rows>
 
       <AgreementPanel result={result} />
+      <StorageProofPanel proof={outcome.storageProof} anchor={result.agreement.anchor} />
 
       <h2>Custody timeline</h2>
       <p className="muted">
@@ -313,6 +315,48 @@ function AgreementPanel({ result }: { result: VerificationResult }) {
         Each reader is one company&apos;s node. Agreement at one block makes a single lying or broken provider visible. It
         is not proof.
       </p>
+    </section>
+  );
+}
+
+function StorageProofPanel({ proof, anchor }: { proof: StorageProofReport; anchor: bigint | null }) {
+  const label = {
+    verified: "Verified: the account and both storage proofs match the agreed contract read.",
+    mismatch: "The proofs are valid, but the storage values do not match the contract read.",
+    invalid: "The storage proof is invalid and was rejected.",
+    unavailable: "A storage proof could not be checked.",
+  }[proof.status];
+  return (
+    <section data-testid="storage-proof">
+      <h2>Storage proof (additional check)</h2>
+      <p data-testid={`storage-proof-${proof.status}`}>{label}</p>
+      {proof.reader ? (
+        <p>
+          Proof reader: <span className="mono">{proof.reader}</span>
+        </p>
+      ) : null}
+      {anchor !== null ? <p>Anchor block: {anchor}</p> : null}
+      <Rows>
+        <Row label="Anchor state root"><span className="mono">{proof.stateRoot}</span></Row>
+        <Row label="Custodian slot">
+          <span className="mono">{proof.custodianSlot}</span>
+          <br />
+          Proven value: {proof.custodian ?? "unavailable"} (
+          {proof.custodianMatches === true ? "matches" : proof.custodianMatches === false ? "does not match" : "not checked"})
+        </Row>
+        <Row label="Status slot">
+          <span className="mono">{proof.statusSlot}</span>
+          <br />
+          Proven status: {proof.provenStatus === null ? "unavailable" : proof.provenStatus} (
+          {proof.statusMatches === true ? "matches" : proof.statusMatches === false ? "does not match" : "not checked"})
+        </Row>
+      </Rows>
+      {proof.detail ? (
+        <p className={proof.status === "invalid" || proof.status === "mismatch" ? "warning" : "muted"}>
+          {proof.detail}
+        </p>
+      ) : null}
+      <p className="muted">This optional cryptographic check is separate from the green seal and does not affect it.</p>
     </section>
   );
 }

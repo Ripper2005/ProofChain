@@ -4,6 +4,7 @@ export const RPC_ALLOWLIST = [
   "eth_getBlockByNumber",
   "eth_getBlockByHash",
   "eth_getCode",
+  "eth_getProof",
   "eth_call",
   "eth_getLogs",
   "eth_getTransactionByHash",

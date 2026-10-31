@@ -10,13 +10,12 @@
     },
     {
       "chainId": 11155111,
-      "address": "0x01E560E6F16D86b7764284476a3E57D013bF5840",
-      "startBlock": 12028140,
+      "address": "0x085156D33591d8DCce11703017D9B078bdEb837b",
+      "startBlock": 12033482,
       "label": "sepolia",
       "current": true,
       "rpcUrls": [
         "https://ethereum-sepolia-rpc.publicnode.com",
-        "https://1rpc.io/sepolia",
         "https://sepolia.gateway.tenderly.co",
         "https://sepolia.rpc.thirdweb.com",
         "https://0xrpc.io/sep"

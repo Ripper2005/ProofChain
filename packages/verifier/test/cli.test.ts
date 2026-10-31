@@ -27,7 +27,7 @@ import {
   unreachableReader,
 } from "./fakes.ts";
 
-const SEPOLIA = "0x01E560E6F16D86b7764284476a3E57D013bF5840";
+const SEPOLIA = "0x085156D33591d8DCce11703017D9B078bdEb837b";
 const LIST = parseDeployments({
   deployments: [
     { chainId: 31337, address: CONTRACT, startBlock: 1, label: "local anvil", current: true, rpcUrls: [] },
@@ -102,6 +102,8 @@ test("the report prints trust, each reader, the custody sequence, each document 
   assert.equal((text.match(/^    pass /gm) ?? []).length, 4);
   assert.match(text, /http:\/\/gateway\.test: passed/);
   assert.match(text, /Document verdict: MATCH \(on-chain document\)/);
+  assert.match(text, /Storage proof \(additional check\)\n  verified against the anchor state root/);
+  assert.match(text, /This check is separate from the green seal and does not affect it\./);
   assert.match(text, /Green seal\n  YES/);
   assert.match(text, /Batch status: RECALLED\. Reason: "Damaged seal"\./);
   assert.equal(result.seal.green, true);

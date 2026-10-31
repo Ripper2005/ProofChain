@@ -18,6 +18,7 @@
     "verify-batch": "node --experimental-strip-types bin/verify-batch.ts"
   },
   "dependencies": {
+    "@ethereumjs/trie": "6.2.1",
     "@proofchain/metadata": "file:../metadata",
     "multiformats": "14.0.5",
     "viem": "2.57.13"

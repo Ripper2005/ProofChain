@@ -4,6 +4,7 @@ import { inspectRpcBody, isLocalhostHost, isLoopbackPeer, pinPostDecision, RPC_A
 
 test("allows a single read method and rejects writes", () => {
   assert.equal(inspectRpcBody({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }).ok, true);
+  assert.equal(inspectRpcBody({ jsonrpc: "2.0", id: 2, method: "eth_getProof", params: [] }).ok, true);
   for (const method of RPC_ALLOWLIST) {
     assert.equal(inspectRpcBody({ method }).ok, true);
   }

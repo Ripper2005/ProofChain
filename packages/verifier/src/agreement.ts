@@ -13,6 +13,7 @@ export type Snapshot = {
   getPendingTransfer: Answer;
   getCustodyHistory: Answer;
   hasRole: Answer | null;
+  stateRoot: Hex;
 };
 
 export type ReaderStatus = "agrees" | "disagrees" | "unreachable" | "misconfigured";
@@ -49,7 +50,7 @@ type Target = { chainId: number; contract: Address; batchId: Hex };
 
 type Probe = { ok: true; chainId: number; head: bigint } | { ok: false; detail: string };
 
-const FIELDS = ["blockHash", "getBatch", "getPendingTransfer", "getCustodyHistory", "hasRole"] as const;
+const FIELDS = ["blockHash", "getBatch", "getPendingTransfer", "getCustodyHistory", "hasRole", "stateRoot"] as const;
 
 const FIELD_LABELS: Record<(typeof FIELDS)[number], string> = {
   blockHash: "block hash",
@@ -57,6 +58,7 @@ const FIELD_LABELS: Record<(typeof FIELDS)[number], string> = {
   getPendingTransfer: "getPendingTransfer",
   getCustodyHistory: "getCustodyHistory",
   hasRole: "hasRole(MANUFACTURER_ROLE, manufacturer)",
+  stateRoot: "state root",
 };
 
 export function emptyAgreement(configured: number): Agreement {
@@ -176,6 +178,7 @@ export function describeSnapshot(snapshot: Snapshot): string[] {
     `getPendingTransfer: ${describePending(snapshot.getPendingTransfer)}`,
     `getCustodyHistory: ${describeHistory(snapshot.getCustodyHistory)}`,
     `hasRole(MANUFACTURER_ROLE, manufacturer): ${describeRole(snapshot.hasRole)}`,
+    `state root ${snapshot.stateRoot}`,
   ];
 }
 
@@ -198,15 +201,28 @@ async function snapshot(reader: Reader, anchor: bigint, target: Target): Promise
     read(encodeFunctionData({ abi: productRegistryAbi, functionName: "getPendingTransfer", args: [target.batchId] })),
     read(encodeFunctionData({ abi: productRegistryAbi, functionName: "getCustodyHistory", args: [target.batchId] })),
   ]);
-  const blockHash = isRecord(header) && typeof header.hash === "string" && isHex(header.hash) ? header.hash : null;
-  if (!blockHash || blockHash.length !== 66) throw new Error(`no block header for block ${anchor}`);
+  const blockHash = isRecord(header) && typeof header.hash === "string" && isHash(header.hash) ? header.hash : null;
+  const stateRoot =
+    isRecord(header) && typeof header.stateRoot === "string" && isHash(header.stateRoot) ? header.stateRoot : null;
+  if (!blockHash || !stateRoot) throw new Error(`no block hash and state root for block ${anchor}`);
   const manufacturer = getBatch.kind === "ok" ? manufacturerOf(getBatch.data) : null;
   const hasRole = manufacturer
     ? await read(
         encodeFunctionData({ abi: productRegistryAbi, functionName: "hasRole", args: [MANUFACTURER_ROLE, manufacturer] }),
       )
     : null;
-  return { blockHash: blockHash.toLowerCase() as Hex, getBatch, getPendingTransfer, getCustodyHistory, hasRole };
+  return {
+    blockHash: blockHash.toLowerCase() as Hex,
+    getBatch,
+    getPendingTransfer,
+    getCustodyHistory,
+    hasRole,
+    stateRoot: stateRoot.toLowerCase() as Hex,
+  };
+}
+
+function isHash(value: string): boolean {
+  return /^0x[0-9a-fA-F]{64}$/.test(value);
 }
 
 async function call(reader: Reader, contract: Address, data: Hex, block: Hex): Promise<Answer> {
