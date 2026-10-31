@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prestart": "npm run build --prefix ../../packages/metadata",
-    "pretest": "npm run build --prefix ../../packages/metadata",
+    "prestart": "pnpm --dir ../../packages/metadata build",
+    "pretest": "pnpm --dir ../../packages/metadata build",
     "start": "node --experimental-strip-types src/main.ts",
-    "test": "node --experimental-strip-types --test test/pin.test.ts"
+    "test": "node --experimental-strip-types --test test/pin.test.ts test/pinata.test.ts"
   },
   "dependencies": {
     "@proofchain/metadata": "file:../../packages/metadata",

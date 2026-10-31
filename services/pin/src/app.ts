@@ -1,8 +1,16 @@
 import { MetadataError, hashMetadata, parseAndValidate } from "@proofchain/metadata";
-import { Hono } from "hono";
-import { MAX_BLOB_BYTES, type Pinner } from "./pinner.ts";
+import { Hono, type Context } from "hono";
+import { MAX_BLOB_BYTES, PinError, pinWithPublicCopy, type Log, type Pinner, type PublicCopy } from "./pinner.ts";
 
-export function createApp(pinner: Pinner) {
+export type AppOptions = {
+  publicCopy?: PublicCopy;
+  log?: Log;
+};
+
+export function createApp(pinner: Pinner, options: AppOptions = {}) {
+  const log = options.log ?? ((line: string) => console.error(line));
+  const pin = (bytes: Uint8Array<ArrayBuffer>, fileName: string) =>
+    pinWithPublicCopy(pinner, options.publicCopy, bytes, fileName, log);
   const app = new Hono();
 
   app.post("/blobs", async (c) => {
@@ -14,10 +22,10 @@ export function createApp(pinner: Pinner) {
       return c.json({ error: "TooLarge", message: "Blob exceeds 5 MB" }, 413);
     }
     try {
-      const cid = await pinner.pin(bytes, "blob");
-      return c.json({ cid });
-    } catch {
-      return c.json({ error: "PinFailed", message: "Kubo did not pin the blob" }, 502);
+      const pinned = await pin(bytes, "blob");
+      return c.json({ cid: pinned.cid, public: pinned.public });
+    } catch (error) {
+      return pinFailure(c, error, "blob");
     }
   });
 
@@ -49,14 +57,22 @@ export function createApp(pinner: Pinner) {
     }
 
     try {
-      const cid = await pinner.pin(new TextEncoder().encode(body.canonical), "metadata.json");
-      return c.json({ cid, metadataHash: hashMetadata(body.canonical) });
-    } catch {
-      return c.json({ error: "PinFailed", message: "Kubo did not pin the document" }, 502);
+      const pinned = await pin(new TextEncoder().encode(body.canonical), "metadata.json");
+      return c.json({ cid: pinned.cid, metadataHash: hashMetadata(body.canonical), public: pinned.public });
+    } catch (error) {
+      return pinFailure(c, error, "document");
     }
   });
 
   return app;
+}
+
+function pinFailure(c: Context, error: unknown, subject: string) {
+  if (!(error instanceof PinError)) throw error;
+  if (error.code === "CidMismatch") {
+    return c.json({ error: "CidMismatch", message: `Pinata reported a different CID than Kubo for the ${subject}` }, 502);
+  }
+  return c.json({ error: "PinFailed", message: `${error.target} did not pin the ${subject}` }, 502);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

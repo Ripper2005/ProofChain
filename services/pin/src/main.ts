@@ -1,12 +1,17 @@
 import { createServer, type IncomingMessage } from "node:http";
-import { createApp } from "./app.ts";
-import { createKuboPinner } from "./kubo.ts";
+import { loadConfig, type PinConfig } from "./config.ts";
 import { MAX_BLOB_BYTES } from "./pinner.ts";
+import { createService } from "./service.ts";
 
-const port = Number(process.env.PORT ?? 8788);
-const hostname = process.env.PIN_HOST ?? "127.0.0.1";
-const apiUrl = process.env.IPFS_API_URL ?? "http://127.0.0.1:5001";
-const app = createApp(createKuboPinner(apiUrl));
+let config: PinConfig;
+try {
+  config = loadConfig(process.env);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error);
+  process.exit(1);
+}
+const { port, host: hostname, pinata } = config;
+const app = createService(config);
 
 const server = createServer(async (req, res) => {
   try {
@@ -14,8 +19,8 @@ const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${host}`);
     const body = await readLimited(req, MAX_BLOB_BYTES);
     if (body === null) {
-      res.writeHead(413, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: "TooLarge", message: "Request body exceeds 5 MB" }));
+      res.writeHead(413, { "content-type": "application/json", connection: "close" });
+      res.end(JSON.stringify({ error: "TooLarge", message: "Request body exceeds 5 MB" }), () => req.destroy());
       return;
     }
     const headers = new Headers();
@@ -40,14 +45,17 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(port, hostname);
+server.listen(port, hostname, () => {
+  const publicCopy = pinata ? `Pinata public copy ${pinata.required ? "required" : "optional"}` : "no public copy";
+  console.log(`pin listening on ${hostname}:${port}, ${publicCopy}`);
+});
 
-function readLimited(req: IncomingMessage, maxBytes: number): Promise<Uint8Array | null> {
+function readLimited(req: IncomingMessage, maxBytes: number): Promise<Uint8Array<ArrayBuffer> | null> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
     let settled = false;
-    const finish = (value: Uint8Array | null) => {
+    const finish = (value: Uint8Array<ArrayBuffer> | null) => {
       if (settled) return;
       settled = true;
       resolve(value);
@@ -56,8 +64,8 @@ function readLimited(req: IncomingMessage, maxBytes: number): Promise<Uint8Array
       if (settled) return;
       total += chunk.byteLength;
       if (total > maxBytes) {
+        req.pause();
         finish(null);
-        req.destroy();
         return;
       }
       chunks.push(chunk);

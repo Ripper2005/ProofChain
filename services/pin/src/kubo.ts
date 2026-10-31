@@ -4,7 +4,13 @@ type KuboAddResponse = {
   Hash?: string;
 };
 
-export function createKuboPinner(apiUrl: string, fetchImpl: typeof fetch = fetch): Pinner {
+export const KUBO_TIMEOUT_MS = 30_000;
+
+export function createKuboPinner(
+  apiUrl: string,
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs: number = KUBO_TIMEOUT_MS,
+): Pinner {
   return {
     async pin(bytes, fileName) {
       const url = new URL("/api/v0/add", apiUrl.endsWith("/") ? apiUrl : `${apiUrl}/`);
@@ -12,7 +18,7 @@ export function createKuboPinner(apiUrl: string, fetchImpl: typeof fetch = fetch
       url.searchParams.set("pin", "true");
       const form = new FormData();
       form.append("file", new Blob([bytes]), fileName);
-      const response = await fetchImpl(url, { method: "POST", body: form });
+      const response = await fetchImpl(url, { method: "POST", body: form, signal: AbortSignal.timeout(timeoutMs) });
       if (!response.ok) {
         throw new Error(`Kubo add failed with ${response.status}`);
       }
