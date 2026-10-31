@@ -1,5 +1,5 @@
 // Generated from contracts/out/ProductRegistry.sol/ProductRegistry.json.
-// Regenerate with: npm run generate:abi --prefix apps/web
+// Regenerate with: pnpm --dir apps/web generate:abi
 // Do not edit by hand.
 
 import type { Abi } from "viem";
@@ -58,6 +58,19 @@ export const productRegistryAbi = [
   {
     "type": "function",
     "name": "MAX_CID_LENGTH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_DOCUMENT_LENGTH",
     "inputs": [],
     "outputs": [
       {
@@ -379,9 +392,9 @@ export const productRegistryAbi = [
         "internalType": "string"
       },
       {
-        "name": "metadataHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "document",
+        "type": "string",
+        "internalType": "string"
       },
       {
         "name": "metadataCid",
@@ -523,6 +536,12 @@ export const productRegistryAbi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      },
+      {
+        "name": "document",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
       }
     ],
     "anonymous": false

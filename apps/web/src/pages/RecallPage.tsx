@@ -4,13 +4,14 @@ import { useState } from "react";
 import { useAccount } from "wagmi";
 import { ConnectButton } from "../components/ConnectButton.tsx";
 import { useSendAction } from "../lib/actions.ts";
-import { currentDeployment } from "../lib/deployments.ts";
+import { writeTarget, writeTargetMessage } from "../lib/deployments.ts";
 import { readRoles } from "../lib/reader.ts";
 
 export function RecallPage() {
   const queryClient = useQueryClient();
   const { address } = useAccount();
-  const current = currentDeployment();
+  const target = writeTarget();
+  const current = target.kind === "ready" ? target.deployment : null;
   const action = useSendAction();
   const [batchCode, setBatchCode] = useState<string>("PCB-2026-001");
   const [reason, setReason] = useState("");
@@ -45,6 +46,11 @@ export function RecallPage() {
         Recall freezes the batch and clears a pending handoff. A blank reason is sent as an empty string. The contract
         stores the reason in the recall event.
       </p>
+      {!current ? (
+        <p className="warning" data-testid="write-not-configured">
+          {writeTargetMessage(target)}
+        </p>
+      ) : null}
       <ConnectButton />
       {address && roles.data && !roles.data.recall ? (
         <p className="warning" data-testid="recall-role-warning">

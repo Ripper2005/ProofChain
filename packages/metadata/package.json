@@ -12,7 +12,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepare": "tsc -p tsconfig.json",
-    "test": "npm run build && node --experimental-strip-types --test test/metadata.test.ts"
+    "test": "pnpm run build && node --experimental-strip-types --test test/metadata.test.ts"
   },
   "dependencies": {
     "viem": "2.57.13"

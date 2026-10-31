@@ -1,4 +1,5 @@
 import { NavLink, Outlet, useMatch } from "react-router-dom";
+import { configurationErrors } from "../lib/deployments.ts";
 
 const links = [
   { to: "/", label: "Home", end: true },
@@ -25,6 +26,11 @@ export function Shell() {
         </nav>
       </header>
       <main>
+        {configurationErrors().map((error) => (
+          <p key={error} className="warning" role="alert" data-testid="configuration-error">
+            {error}
+          </p>
+        ))}
         {verifying ? <p className="muted">Public verification does not use a wallet.</p> : null}
         <Outlet />
       </main>

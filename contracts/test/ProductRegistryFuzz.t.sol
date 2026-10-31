@@ -14,8 +14,10 @@ contract ProductRegistryFuzzTest is Test {
     address internal distributor = makeAddr("distributor");
 
     bytes32 internal id;
-    bytes32 internal constant HASH = bytes32(uint256(1));
-    string internal constant CID = "bafybeigdyrzt5sfp7kmew6xol2n3examplecid";
+    string internal constant DOCUMENT =
+        '{"batchCode":"PCB-2026-001","description":"","imageCid":"","manufacturerName":"Demo Electronics Pvt. Ltd.","name":"STM32 Controller Development Board","productionDate":"2026-10-15","quantity":50,"schemaVersion":1,"sku":"CTRL-STM32-A"}';
+    string internal constant CID = "bafkreicjx37puhth4lglmhqqna5gjrcvjedfpputssey6isdy5slgiz7im";
+    string internal constant FUZZ_CODE = "FUZZ-BATCH";
 
     function setUp() public {
         registry = new ProductRegistry(admin);
@@ -25,13 +27,12 @@ contract ProductRegistryFuzzTest is Test {
         vm.stopPrank();
 
         vm.prank(manufacturer);
-        registry.registerBatch("PCB-2026-001", HASH, CID);
+        registry.registerBatch("PCB-2026-001", DOCUMENT, CID);
         id = registry.computeBatchId("PCB-2026-001");
     }
 
-    function testFuzz_unauthorizedRegister(address caller, bytes32 hash) public {
+    function testFuzz_unauthorizedRegister(address caller, string calldata document) public {
         vm.assume(caller != manufacturer);
-        vm.assume(hash != bytes32(0));
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -39,7 +40,7 @@ contract ProductRegistryFuzzTest is Test {
             )
         );
         vm.prank(caller);
-        registry.registerBatch("FUZZ-BATCH", hash, CID);
+        registry.registerBatch(FUZZ_CODE, document, CID);
     }
 
     function testFuzz_unauthorizedRecall(address caller) public {
@@ -80,5 +81,33 @@ contract ProductRegistryFuzzTest is Test {
         vm.expectRevert(abi.encodeWithSelector(ProductRegistry.NotCurrentCustodian.selector, caller, manufacturer));
         vm.prank(caller);
         registry.cancelCustodyTransfer(id);
+    }
+
+    function testFuzz_documentLength(uint256 length) public {
+        _checkDocumentLength(bound(length, 0, 2 * registry.MAX_DOCUMENT_LENGTH() + 1));
+    }
+
+    function testFuzz_documentLengthNearLimit(uint256 length) public {
+        uint256 limit = registry.MAX_DOCUMENT_LENGTH();
+        _checkDocumentLength(bound(length, limit - 32, limit + 32));
+    }
+
+    function _checkDocumentLength(uint256 length) internal {
+        string memory document = _document(length);
+        bool accepted = length >= 1 && length <= registry.MAX_DOCUMENT_LENGTH();
+        if (!accepted) vm.expectRevert(ProductRegistry.InvalidMetadata.selector);
+        vm.prank(manufacturer);
+        registry.registerBatch(FUZZ_CODE, document, CID);
+        if (accepted) {
+            assertEq(registry.getBatch(registry.computeBatchId(FUZZ_CODE)).metadataHash, keccak256(bytes(document)));
+        }
+    }
+
+    function _document(uint256 length) internal pure returns (string memory) {
+        bytes memory out = new bytes(length);
+        for (uint256 i = 0; i < length; ++i) {
+            out[i] = bytes1(uint8(0x61 + (i % 26)));
+        }
+        return string(out);
     }
 }

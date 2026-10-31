@@ -33,7 +33,7 @@ for (const name of [
 
 mkdirSync(dirname(destination), { recursive: true });
 const source = `// Generated from contracts/out/ProductRegistry.sol/ProductRegistry.json.
-// Regenerate with: npm run generate:abi --prefix apps/web
+// Regenerate with: pnpm --dir apps/web generate:abi
 // Do not edit by hand.
 
 import type { Abi } from "viem";

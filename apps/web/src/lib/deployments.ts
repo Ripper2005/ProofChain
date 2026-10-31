@@ -1,5 +1,8 @@
 import { getAddress, isAddress, type Address } from "viem";
 import rawFile from "../../trusted-deployments.json" with { type: "json" };
+import { parseChainId } from "./format.ts";
+
+export const LOCAL_CHAIN_ID = 31337;
 
 export type Deployment = {
   chainId: number;
@@ -7,80 +10,172 @@ export type Deployment = {
   startBlock: bigint;
   label: string;
   current: boolean;
-  rpcUrl: string;
+  rpcUrls: string[];
 };
 
-type DeploymentFile = {
-  deployments: Array<{
-    chainId: number;
-    address: string;
-    startBlock: number;
-    label: string;
-    current: boolean;
-    rpcUrl: string;
-  }>;
+export type DeploymentList = {
+  deployments: Deployment[];
+  errors: string[];
 };
 
-export function deployments(): Deployment[] {
-  const file = rawFile as DeploymentFile;
-  const out: Deployment[] = [];
-  for (const item of file.deployments) {
-    if (!Number.isSafeInteger(item.chainId) || item.chainId < 0) continue;
-    if (typeof item.address !== "string" || !isAddress(item.address)) continue;
-    if (!Number.isSafeInteger(item.startBlock) || item.startBlock < 0) continue;
-    out.push({
-      chainId: item.chainId,
-      address: getAddress(item.address),
-      startBlock: BigInt(item.startBlock),
-      label: typeof item.label === "string" && item.label.length > 0 ? item.label : "deployment",
-      current: item.current === true,
-      rpcUrl: typeof item.rpcUrl === "string" ? item.rpcUrl.trim() : "",
-    });
+export type Trust =
+  | { kind: "current"; label: string }
+  | { kind: "earlier"; label: string; current: Deployment | null }
+  | { kind: "unrecognized" };
+
+export type WriteTarget =
+  | { kind: "ready"; deployment: Deployment }
+  | { kind: "not-configured" }
+  | { kind: "no-deployment"; chainId: number };
+
+type WebEnv = { DEV?: boolean; VITE_WRITE_CHAIN_ID?: string };
+
+export function parseDeployments(file: unknown): DeploymentList {
+  const items = isRecord(file) && Array.isArray(file.deployments) ? file.deployments : [];
+  const deployments: Deployment[] = [];
+  const errors: string[] = [];
+  items.forEach((item, index) => {
+    const parsed = parseEntry(item);
+    if (parsed) deployments.push(parsed);
+    else errors.push(`Entry ${index + 1} in trusted-deployments.json is not a valid deployment and is ignored.`);
+  });
+  for (const chainId of new Set(deployments.map((item) => item.chainId))) {
+    const marked = deployments.filter((item) => item.chainId === chainId && item.current).length;
+    if (marked > 1) {
+      errors.push(
+        `trusted-deployments.json marks ${marked} deployments current on chain ${chainId}. At most one deployment per chain may be current.`,
+      );
+    }
   }
-  return out;
+  return { deployments, errors };
 }
 
-export function currentListedDeployment(): Deployment | null {
-  return deployments().find((item) => item.current) ?? null;
+export function currentOn(list: DeploymentList, chainId: number): Deployment | null {
+  const marked = list.deployments.filter((item) => item.chainId === chainId && item.current);
+  return marked.length === 1 ? (marked[0] ?? null) : null;
 }
 
-export function currentDeployment(): Deployment | null {
-  return currentListedDeployment() ?? envFallback();
+export function findIn(list: DeploymentList, chainId: number, address: string): Deployment | null {
+  if (!isAddress(address, { strict: false })) return null;
+  const wanted = address.toLowerCase();
+  return list.deployments.find((item) => item.chainId === chainId && item.address.toLowerCase() === wanted) ?? null;
 }
 
-export function findDeployment(chainId: number, address: string): Deployment | null {
-  if (!isAddress(address)) return null;
-  const checksummed = getAddress(address);
-  return deployments().find((item) => item.chainId === chainId && item.address === checksummed) ?? null;
+export function classifyTrust(list: DeploymentList, chainId: number, address: string): Trust {
+  const matched = findIn(list, chainId, address);
+  if (!matched) return { kind: "unrecognized" };
+  const current = currentOn(list, chainId);
+  if (current?.address === matched.address) return { kind: "current", label: matched.label };
+  return { kind: "earlier", label: matched.label, current };
 }
 
-export function readerUrl(chainId: number, contractAddress: string): string | null {
-  if (!isAddress(contractAddress)) return null;
-  const matched = findDeployment(chainId, contractAddress);
-  if (matched?.rpcUrl) return matched.rpcUrl;
-  if (import.meta.env.DEV) return new URL("/rpc", window.location.origin).href;
-  if (!matched) {
-    const donor = deployments().find((item) => item.chainId === chainId && item.rpcUrl.length > 0);
-    if (donor) return donor.rpcUrl;
+export function listedReaders(list: DeploymentList, chainId: number): string[] {
+  const current = currentOn(list, chainId);
+  const onChain = list.deployments.filter((item) => item.chainId === chainId);
+  const ordered = current ? [current, ...onChain.filter((item) => item !== current)] : onChain;
+  return ordered.find((item) => item.rpcUrls.length > 0)?.rpcUrls ?? [];
+}
+
+export function selectReader(list: DeploymentList, chainId: number, sameOriginRpc: string | null): string | null {
+  return listedReaders(list, chainId)[0] ?? sameOriginRpc;
+}
+
+export function resolveWriteChain(
+  raw: string | undefined,
+  dev: boolean,
+): { chainId: number | null; error: string | null } {
+  const value = raw?.trim() ?? "";
+  if (!value) return { chainId: dev ? LOCAL_CHAIN_ID : null, error: null };
+  const chainId = parseChainId(value);
+  if (chainId === null) {
+    return { chainId: null, error: `VITE_WRITE_CHAIN_ID is "${value}", which is not a decimal chain id. Writing is off.` };
+  }
+  return { chainId, error: null };
+}
+
+export function writeTargetIn(list: DeploymentList, chainId: number | null): WriteTarget {
+  if (chainId === null) return { kind: "not-configured" };
+  const deployment = currentOn(list, chainId);
+  return deployment ? { kind: "ready", deployment } : { kind: "no-deployment", chainId };
+}
+
+export function writeTargetMessage(target: WriteTarget): string | null {
+  if (target.kind === "not-configured") return "Writing is not configured on this site. Verification still works.";
+  if (target.kind === "no-deployment") {
+    return `trusted-deployments.json has no single current deployment on chain ${target.chainId}, so this site cannot write. Verification still works.`;
   }
   return null;
 }
 
-export function envContractAddress(): Address | null {
-  const value = import.meta.env.VITE_CONTRACT_ADDRESS?.trim() ?? "";
-  if (!value || !isAddress(value)) return null;
-  return getAddress(value);
+const TRUSTED = parseDeployments(rawFile);
+
+export function trustedDeployments(): DeploymentList {
+  return TRUSTED;
 }
 
-function envFallback(): Deployment | null {
-  const address = envContractAddress();
-  if (!address) return null;
+export function findDeployment(chainId: number, address: string): Deployment | null {
+  return findIn(trustedDeployments(), chainId, address);
+}
+
+export function describeTrust(chainId: number, address: string): Trust {
+  return classifyTrust(trustedDeployments(), chainId, address);
+}
+
+export function readerUrl(chainId: number): string | null {
+  return selectReader(trustedDeployments(), chainId, devRpcUrl());
+}
+
+export function writeTarget(): WriteTarget {
+  const env = viteEnv();
+  return writeTargetIn(trustedDeployments(), resolveWriteChain(env.VITE_WRITE_CHAIN_ID, env.DEV === true).chainId);
+}
+
+export function writeDeployment(): Deployment | null {
+  const target = writeTarget();
+  return target.kind === "ready" ? target.deployment : null;
+}
+
+export function configurationErrors(): string[] {
+  const env = viteEnv();
+  const write = resolveWriteChain(env.VITE_WRITE_CHAIN_ID, env.DEV === true);
+  return write.error ? [...TRUSTED.errors, write.error] : TRUSTED.errors;
+}
+
+function viteEnv(): WebEnv {
+  return (import.meta.env as WebEnv | undefined) ?? {};
+}
+
+function devRpcUrl(): string | null {
+  return viteEnv().DEV ? new URL("/rpc", window.location.origin).href : null;
+}
+
+function parseEntry(item: unknown): Deployment | null {
+  if (!isRecord(item)) return null;
+  const { chainId, address, startBlock, label, current, rpcUrls } = item;
+  if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 0) return null;
+  if (typeof address !== "string" || !isAddress(address, { strict: false })) return null;
+  if (typeof startBlock !== "number" || !Number.isSafeInteger(startBlock) || startBlock < 0) return null;
+  if (!Array.isArray(rpcUrls) || !rpcUrls.every(isHttpUrl)) return null;
   return {
-    chainId: 31337,
-    address,
-    startBlock: 0n,
-    label: "VITE_CONTRACT_ADDRESS",
-    current: true,
-    rpcUrl: "",
+    chainId,
+    address: getAddress(address.toLowerCase()),
+    startBlock: BigInt(startBlock),
+    label: typeof label === "string" && label.length > 0 ? label : "deployment",
+    current: current === true,
+    rpcUrls: rpcUrls.map((url: string) => url.trim()),
   };
+}
+
+function isHttpUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

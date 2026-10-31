@@ -1,6 +1,6 @@
 import { keccak256, toBytes } from "viem";
 
-export const MAX_DOCUMENT_BYTES = 64 * 1024;
+export const MAX_DOCUMENT_BYTES = 4096;
 
 const BATCH_CODE = /^[A-Za-z0-9-]{1,64}$/;
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -60,7 +60,7 @@ export function canonicalize(value: unknown): string {
 export function parseAndValidate(canonical: string): ProductMetadata {
   const bytes = new TextEncoder().encode(canonical);
   if (bytes.byteLength > MAX_DOCUMENT_BYTES) {
-    throw new MetadataError("TooLarge", "Canonical document exceeds 64 KiB");
+    throw new MetadataError("TooLarge", `Canonical document exceeds ${MAX_DOCUMENT_BYTES} bytes`);
   }
 
   let parsed: unknown;

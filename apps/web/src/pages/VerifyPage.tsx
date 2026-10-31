@@ -6,15 +6,16 @@ import { Row, Rows } from "../components/Rows.tsx";
 import { ipfsFileUrl } from "../lib/document.ts";
 import { DOCUMENT_UNAVAILABLE, READER_FAILURE } from "../lib/failures.ts";
 import { formatUnix, parseChainId } from "../lib/format.ts";
-import { loadVerification, type Trust, type VerifyResult } from "../lib/reader.ts";
+import type { Trust } from "../lib/deployments.ts";
+import { loadVerification, type VerifyResult } from "../lib/reader.ts";
 
 export function VerifyPage() {
   const params = useParams();
   const chainId = parseChainId(params.chainId ?? "");
   const rawAddress = params.contractAddress ?? "";
   const batchCode = params.batchCode ?? "";
-  const addressOk = isAddress(rawAddress);
-  const contract = addressOk ? getAddress(rawAddress) : null;
+  const addressOk = isAddress(rawAddress, { strict: false });
+  const contract = addressOk ? getAddress(rawAddress.toLowerCase()) : null;
 
   const query = useQuery({
     queryKey: ["verify", chainId, contract, batchCode],
@@ -272,16 +273,19 @@ function TrustBanner({ trust }: { trust: Trust }) {
         <p>This is an earlier contract ({trust.label}).</p>
         {trust.current ? (
           <p>
-            The current contract is <span className="mono">{trust.current.address}</span> on chain {trust.current.chainId} (
-            {trust.current.label}).
+            The current contract on chain {trust.current.chainId} is{" "}
+            <span className="mono" data-testid="current-on-chain">
+              {trust.current.address}
+            </span>{" "}
+            ({trust.current.label}).
           </p>
         ) : (
-          <p>No deployment is marked current.</p>
+          <p>No single deployment on this chain is marked current in trusted-deployments.json.</p>
         )}
       </div>
     );
   }
-  return <p>Recognized deployment: {trust.label}.</p>;
+  return <p data-testid="current-deployment">Recognized deployment: {trust.label}, the current contract on this chain.</p>;
 }
 
 function ReaderNote({ cast, chainId, contract }: { cast: string; chainId: number; contract: Address }) {

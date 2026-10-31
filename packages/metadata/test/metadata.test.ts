@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  MAX_DOCUMENT_BYTES,
   MetadataError,
   canonicalize,
   computeBatchId,
@@ -57,6 +58,27 @@ describe("parseAndValidate", () => {
 
   it("rejects NaN before it can become null", () => {
     assert.throws(() => canonicalize({ quantity: Number.NaN }), MetadataError);
+  });
+
+  it("accepts 4096 UTF-8 bytes and rejects 4097, the contract's document limit", () => {
+    assert.equal(MAX_DOCUMENT_BYTES, 4096);
+    const parsed = JSON.parse(GOLDEN) as Record<string, unknown>;
+    const spare = MAX_DOCUMENT_BYTES - new TextEncoder().encode(GOLDEN).byteLength;
+
+    const atLimit = withField(parsed, "description", "a".repeat(spare));
+    assert.equal(new TextEncoder().encode(atLimit).byteLength, 4096);
+    assert.equal(parseAndValidate(atLimit).description.length, spare);
+
+    const overLimit = withField(parsed, "description", "a".repeat(spare + 1));
+    assert.throws(() => parseAndValidate(overLimit), (error: unknown) => {
+      return error instanceof MetadataError && error.code === "TooLarge";
+    });
+
+    const multiByte = withField(parsed, "description", "é".repeat(Math.ceil((spare + 1) / 2)));
+    assert.ok(multiByte.length <= MAX_DOCUMENT_BYTES);
+    assert.throws(() => parseAndValidate(multiByte), (error: unknown) => {
+      return error instanceof MetadataError && error.code === "TooLarge";
+    });
   });
 });
 

@@ -8,6 +8,8 @@ export const accountB = `0x${"22".repeat(20)}`;
 export const accountC = `0x${"33".repeat(20)}`;
 export const recaller = `0x${"44".repeat(20)}`;
 export const contractAddress = `0x${"ab".repeat(20)}`;
+export const document =
+  '{"batchCode":"PCB-2026-001","description":"","imageCid":"","manufacturerName":"Demo Electronics Pvt. Ltd.","name":"STM32 Controller Development Board","productionDate":"2026-10-15","quantity":50,"schemaVersion":1,"sku":"CTRL-STM32-A"}';
 export const metadataHash = "0xd318be071fd3161c69b2f2eb4ff0a4d1ba56e1657a6ca854291454927994a752";
 export const metadataCid = "bafytestcid";
 export const batchCode = "PCB-2026-001";

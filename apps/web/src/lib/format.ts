@@ -58,7 +58,7 @@ export function verificationUrl(origin: string, chainId: number, address: Addres
 }
 
 export function castGetBatch(address: Address, batchId: Hex): string {
-  return `cast call ${address} "getBatch(bytes32)(string,address,address,bytes32,string,uint8,uint64)" ${batchId} --rpc-url <YOUR_NODE_URL>`;
+  return `cast call ${address} "getBatch(bytes32)((string,address,address,bytes32,string,uint8,uint64))" ${batchId} --rpc-url <YOUR_NODE_URL>`;
 }
 
 export function parseChainId(value: string): number | null {

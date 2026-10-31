@@ -6,13 +6,14 @@ import { ConnectButton } from "../components/ConnectButton.tsx";
 import { Row, Rows } from "../components/Rows.tsx";
 import { DEMO_DOCUMENT } from "../demo.ts";
 import { useSendAction } from "../lib/actions.ts";
-import { currentDeployment } from "../lib/deployments.ts";
+import { writeTarget, writeTargetMessage } from "../lib/deployments.ts";
 import { formatUnix } from "../lib/format.ts";
 import { loadBatch } from "../lib/reader.ts";
 
 export function CustodyPage() {
   const queryClient = useQueryClient();
-  const current = currentDeployment();
+  const target = writeTarget();
+  const current = target.kind === "ready" ? target.deployment : null;
   const action = useSendAction();
   const [batchCode, setBatchCode] = useState<string>(DEMO_DOCUMENT.batchCode);
   const [recipient, setRecipient] = useState("");
@@ -77,6 +78,11 @@ export function CustodyPage() {
         The current custodian proposes a handoff. The named wallet accepts it, or the custodian cancels it. Any
         connected wallet can submit a proposal. The contract decides whether that wallet is allowed.
       </p>
+      {!current ? (
+        <p className="warning" data-testid="write-not-configured">
+          {writeTargetMessage(target)}
+        </p>
+      ) : null}
       <ConnectButton />
       <label className="field">
         <span>Batch code</span>

@@ -10,6 +10,7 @@ contract ProductRegistry is AccessControl {
     bytes32 public constant RECALL_ROLE = keccak256("RECALL_ROLE");
 
     uint256 public constant MAX_BATCH_CODE_LENGTH = 64;
+    uint256 public constant MAX_DOCUMENT_LENGTH = 4096;
     uint256 public constant MAX_CID_LENGTH = 128;
     uint256 public constant MAX_REASON_LENGTH = 128;
 
@@ -52,36 +53,20 @@ contract ProductRegistry is AccessControl {
         string batchCode,
         bytes32 metadataHash,
         string metadataCid,
-        uint64 createdAt
+        uint64 createdAt,
+        string document
     );
 
-    event CustodyTransferProposed(
-        bytes32 indexed batchId,
-        address indexed from,
-        address indexed to,
-        uint64 proposedAt
-    );
+    event CustodyTransferProposed(bytes32 indexed batchId, address indexed from, address indexed to, uint64 proposedAt);
 
     event CustodyTransferCancelled(
-        bytes32 indexed batchId,
-        address indexed from,
-        address indexed to,
-        uint64 cancelledAt
+        bytes32 indexed batchId, address indexed from, address indexed to, uint64 cancelledAt
     );
 
-    event CustodyTransferred(
-        bytes32 indexed batchId,
-        address indexed from,
-        address indexed to,
-        uint64 timestamp
-    );
+    event CustodyTransferred(bytes32 indexed batchId, address indexed from, address indexed to, uint64 timestamp);
 
     event BatchRecalled(
-        bytes32 indexed batchId,
-        address indexed recalledBy,
-        bool pendingCleared,
-        uint64 recalledAt,
-        string reason
+        bytes32 indexed batchId, address indexed recalledBy, bool pendingCleared, uint64 recalledAt, string reason
     );
 
     error ZeroAddress();
@@ -107,18 +92,17 @@ contract ProductRegistry is AccessControl {
         return keccak256(bytes(batchCode));
     }
 
-    function registerBatch(string calldata batchCode, bytes32 metadataHash, string calldata metadataCid)
+    function registerBatch(string calldata batchCode, string calldata document, string calldata metadataCid)
         external
         onlyRole(MANUFACTURER_ROLE)
     {
         _validateBatchCode(batchCode);
         bytes32 batchId = keccak256(bytes(batchCode));
         if (_batches[batchId].status != Status.None) revert BatchAlreadyExists(batchId);
-        if (metadataHash == bytes32(0)) revert InvalidMetadata();
+        _validateDocument(document);
         _validateCid(metadataCid);
 
-        // forge-lint: disable-next-line(unsafe-typecast)
-        uint64 createdAt = uint64(block.timestamp);
+        bytes32 metadataHash = keccak256(bytes(document));
         _batches[batchId] = Batch({
             batchCode: batchCode,
             manufacturer: msg.sender,
@@ -126,10 +110,14 @@ contract ProductRegistry is AccessControl {
             metadataHash: metadataHash,
             metadataCid: metadataCid,
             status: Status.Active,
-            createdAt: createdAt
+            // forge-lint: disable-next-line(unsafe-typecast)
+            createdAt: uint64(block.timestamp)
         });
 
-        emit BatchRegistered(batchId, msg.sender, batchCode, metadataHash, metadataCid, createdAt);
+        // forge-lint: disable-next-item(unsafe-typecast)
+        emit BatchRegistered(
+            batchId, msg.sender, batchCode, metadataHash, metadataCid, uint64(block.timestamp), document
+        );
     }
 
     function proposeCustodyTransfer(bytes32 batchId, address to) external {
@@ -245,6 +233,11 @@ contract ProductRegistry is AccessControl {
             // forge-lint: disable-next-line(require-revert-in-loop)
             if (!(digit || upper || lower || hyphen)) revert InvalidBatchCode();
         }
+    }
+
+    function _validateDocument(string calldata document) internal pure {
+        uint256 length = bytes(document).length;
+        if (length < 1 || length > MAX_DOCUMENT_LENGTH) revert InvalidMetadata();
     }
 
     function _validateCid(string calldata metadataCid) internal pure {

@@ -4,12 +4,12 @@ import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { productRegistryAbi } from "../contracts/ProductRegistry.ts";
 import { supportedChainId, wagmiConfig, type WalletChainId } from "../wagmi.ts";
-import { currentDeployment } from "./deployments.ts";
+import { writeTarget, writeTargetMessage, type Deployment } from "./deployments.ts";
 import { contractErrorText, walletRejected } from "./errors.ts";
 import { receiptAccepted, REVERTED_RECEIPT } from "./failures.ts";
 
 export type ContractAction =
-  | { functionName: "registerBatch"; args: readonly [string, Hex, string] }
+  | { functionName: "registerBatch"; args: readonly [string, string, string] }
   | { functionName: "proposeCustodyTransfer"; args: readonly [Hex, Address] }
   | { functionName: "acceptCustodyTransfer"; args: readonly [Hex] }
   | { functionName: "cancelCustodyTransfer"; args: readonly [Hex] }
@@ -32,10 +32,16 @@ export function useSendAction() {
       setError("Connect a wallet before this action.");
       return null;
     }
+    const target = writeTarget();
+    if (target.kind !== "ready") {
+      setError(writeTargetMessage(target));
+      return null;
+    }
     setPending(true);
     try {
       const hash = await submitAction({
         action,
+        deployment: target.deployment,
         account: address,
         walletChainId: chainId,
         switchChain: (next) => switchChainAsync({ chainId: next }),
@@ -56,24 +62,24 @@ export function useSendAction() {
 
 export async function submitAction(input: {
   action: ContractAction;
+  deployment: Deployment;
   account: Address;
   walletChainId: number | undefined;
   switchChain: (chainId: WalletChainId) => Promise<unknown>;
   write: WriteFn;
   confirmReceipt?: (hash: Hex, chainId: number) => Promise<{ status: "success" | "reverted" }>;
 }): Promise<Hex> {
-  const current = currentDeployment();
-  if (!current) throw new Error("No current deployment is configured.");
-  if (!supportedChainId(current.chainId)) {
-    throw new Error(`This wallet setup can switch to Anvil or Sepolia. The current deployment is chain ${current.chainId}.`);
+  const { deployment } = input;
+  if (!supportedChainId(deployment.chainId)) {
+    throw new Error(`This wallet setup can switch to Anvil or Sepolia. The write chain is ${deployment.chainId}.`);
   }
-  if (input.walletChainId !== current.chainId) {
-    await input.switchChain(current.chainId);
+  if (input.walletChainId !== deployment.chainId) {
+    await input.switchChain(deployment.chainId);
   }
-  const hash = await writeAction(input.write, current.address, current.chainId, input.account, input.action);
+  const hash = await writeAction(input.write, deployment.address, deployment.chainId, input.account, input.action);
   const receipt = input.confirmReceipt
-    ? await input.confirmReceipt(hash, current.chainId)
-    : await waitForTransactionReceipt(wagmiConfig, { hash, chainId: current.chainId });
+    ? await input.confirmReceipt(hash, deployment.chainId)
+    : await waitForTransactionReceipt(wagmiConfig, { hash, chainId: deployment.chainId });
   if (!receiptAccepted(receipt.status)) throw new Error(REVERTED_RECEIPT);
   return hash;
 }

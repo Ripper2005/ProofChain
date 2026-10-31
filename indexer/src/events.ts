@@ -2,7 +2,7 @@ import { decodeEventLog, parseAbiItem, toEventSelector, type AbiEvent, type Hex 
 import { address, hash32 } from "./hex.ts";
 
 const eventText = [
-  "event BatchRegistered(bytes32 indexed batchId, address indexed manufacturer, string batchCode, bytes32 metadataHash, string metadataCid, uint64 createdAt)",
+  "event BatchRegistered(bytes32 indexed batchId, address indexed manufacturer, string batchCode, bytes32 metadataHash, string metadataCid, uint64 createdAt, string document)",
   "event CustodyTransferProposed(bytes32 indexed batchId, address indexed from, address indexed to, uint64 proposedAt)",
   "event CustodyTransferCancelled(bytes32 indexed batchId, address indexed from, address indexed to, uint64 cancelledAt)",
   "event CustodyTransferred(bytes32 indexed batchId, address indexed from, address indexed to, uint64 timestamp)",
@@ -25,6 +25,7 @@ export type BatchRegisteredPayload = {
   metadataHash: string;
   metadataCid: string;
   createdAt: number;
+  document: string;
 };
 
 export type ProposedPayload = {
@@ -146,6 +147,7 @@ function payloadFrom(eventName: string, args: Readonly<Record<string, unknown>>)
       metadataHash: hash32(text(args.metadataHash)),
       metadataCid: text(args.metadataCid),
       createdAt: unix(args.createdAt),
+      document: text(args.document),
     };
   }
   if (eventName === "CustodyTransferProposed") {

@@ -1,8 +1,10 @@
+import { hashMetadata } from "@proofchain/metadata";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Address, Hex } from "viem";
 import { submitAction } from "../src/lib/actions.ts";
+import type { Deployment } from "../src/lib/deployments.ts";
 import { fetchIpfsBytes } from "../src/lib/document.ts";
 import { contractErrorText } from "../src/lib/errors.ts";
 import {
@@ -18,7 +20,48 @@ const ACCOUNT = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as Address;
 const CONTRACT = "0x5FbDB2315678afecb367f032d93F642f64180aa3" as Address;
 const ZERO = "0x0000000000000000000000000000000000000000" as Address;
 const HASH = "0xd318be071fd3161c69b2f2eb4ff0a4d1ba56e1657a6ca854291454927994a752" as Hex;
+const CANONICAL =
+  '{"batchCode":"PCB-2026-001","description":"","imageCid":"","manufacturerName":"Demo Electronics Pvt. Ltd.","name":"STM32 Controller Development Board","productionDate":"2026-10-15","quantity":50,"schemaVersion":1,"sku":"CTRL-STM32-A"}';
 const TX = `0x${"ab".repeat(32)}` as Hex;
+const LOCAL: Deployment = {
+  chainId: 31337,
+  address: CONTRACT,
+  startBlock: 1n,
+  label: "local anvil",
+  current: true,
+  rpcUrls: [],
+};
+
+test("registerBatch sends the batch code, the canonical document, and the CID to the write deployment", async () => {
+  assert.equal(hashMetadata(CANONICAL), HASH);
+  const sent: unknown[] = [];
+  const hash = await submitAction({
+    action: { functionName: "registerBatch", args: ["PCB-2026-001", CANONICAL, "bafyrei-unpinned"] },
+    deployment: LOCAL,
+    account: ACCOUNT,
+    walletChainId: 31337,
+    switchChain: async () => {},
+    write: (async (request: unknown) => {
+      sent.push(request);
+      return TX;
+    }) as never,
+    confirmReceipt: async () => ({ status: "success" }),
+  });
+  assert.equal(hash, TX);
+  assert.equal(sent.length, 1);
+  const request = sent[0] as { functionName: string; args: readonly unknown[]; address: Address; chainId: number };
+  assert.equal(request.functionName, "registerBatch");
+  assert.deepEqual(request.args, ["PCB-2026-001", CANONICAL, "bafyrei-unpinned"]);
+  assert.equal(request.address, CONTRACT);
+  assert.equal(request.chainId, 31337);
+
+  const source = readFileSync(new URL("../src/pages/RegisterPage.tsx", import.meta.url), "utf8");
+  assert.match(source, /args: \[batchCode, canonical, pinnedDocument\.cid\]/);
+  const pinAt = source.indexOf("await pinMetadata(canonical, batchCode)");
+  const hashCheckAt = source.indexOf("pinnedDocument.metadataHash.toLowerCase() !== localHash.toLowerCase()");
+  const signAt = source.indexOf("await submitAction(");
+  assert.ok(pinAt > 0 && pinAt < hashCheckAt && hashCheckAt < signAt);
+});
 
 test("a reverted receipt is a failure and is not a registration", async () => {
   assert.equal(receiptAccepted("reverted"), false);
@@ -27,7 +70,8 @@ test("a reverted receipt is a failure and is not a registration", async () => {
   let returned: Hex | null = TX;
   try {
     returned = await submitAction({
-      action: { functionName: "registerBatch", args: ["PCB-2026-001", HASH, "bafyrei-unpinned"] },
+      action: { functionName: "registerBatch", args: ["PCB-2026-001", CANONICAL, "bafyrei-unpinned"] },
+      deployment: LOCAL,
       account: ACCOUNT,
       walletChainId: 31337,
       switchChain: async () => {},
@@ -46,7 +90,8 @@ test("a reverted receipt is a failure and is not a registration", async () => {
   assert.equal(contractErrorText(new Error(REVERTED_RECEIPT)), REVERTED_RECEIPT);
 
   const succeeded = await submitAction({
-    action: { functionName: "registerBatch", args: ["PCB-2026-001", HASH, "bafyrei-unpinned"] },
+    action: { functionName: "registerBatch", args: ["PCB-2026-001", CANONICAL, "bafyrei-unpinned"] },
+    deployment: LOCAL,
     account: ACCOUNT,
     walletChainId: 31337,
     switchChain: async () => {},

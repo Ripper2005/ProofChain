@@ -13,6 +13,7 @@ import {
   batchId,
   CANCELLED,
   CREATED,
+  document,
   manufacturer,
   metadataCid,
   metadataHash,
@@ -35,6 +36,7 @@ describe("HTTP API", () => {
       metadataHash,
       metadataCid,
       createdAt: unix(CREATED),
+      document,
     });
     addProductLog(chain, 2, 1, 0, "CustodyTransferProposed", {
       batchId,
@@ -159,6 +161,7 @@ describe("HTTP API", () => {
       metadataHash,
       metadataCid,
       createdAt: unix(CREATED),
+      document,
     });
     const proposed = addProductLog(chain, 2, 1, 0, "CustodyTransferProposed", {
       batchId,

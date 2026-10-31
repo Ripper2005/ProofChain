@@ -5,8 +5,8 @@
       "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
       "startBlock": 1,
       "label": "local anvil",
-      "current": false,
-      "rpcUrl": ""
+      "current": true,
+      "rpcUrls": []
     },
     {
       "chainId": 11155111,
@@ -14,7 +14,13 @@
       "startBlock": 12028140,
       "label": "sepolia",
       "current": true,
-      "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com"
+      "rpcUrls": [
+        "https://ethereum-sepolia-rpc.publicnode.com",
+        "https://1rpc.io/sepolia",
+        "https://sepolia.gateway.tenderly.co",
+        "https://sepolia.rpc.thirdweb.com",
+        "https://0xrpc.io/sep"
+      ]
     }
   ]
 }

@@ -6,23 +6,22 @@ import { useAccount } from "wagmi";
 import { ConnectButton } from "../components/ConnectButton.tsx";
 import { Row, Rows } from "../components/Rows.tsx";
 import { DEMO_DOCUMENT } from "../demo.ts";
-import { currentDeployment, currentListedDeployment, envContractAddress } from "../lib/deployments.ts";
+import { writeTarget, writeTargetMessage } from "../lib/deployments.ts";
 import { fetchIndexer, readBatchList, readHealth } from "../lib/indexer.ts";
 import { readChainHead, readRoles } from "../lib/reader.ts";
 
 export function HomePage() {
   const navigate = useNavigate();
   const { address, chain } = useAccount();
-  const current = currentDeployment();
-  const listed = currentListedDeployment();
-  const envAddress = envContractAddress();
+  const target = writeTarget();
+  const current = target.kind === "ready" ? target.deployment : null;
   const [batchCode, setBatchCode] = useState<string>(DEMO_DOCUMENT.batchCode);
   const [lookupError, setLookupError] = useState<string | null>(null);
 
   const head = useQuery({
-    queryKey: ["chain-head", current?.chainId, current?.address],
+    queryKey: ["chain-head", current?.chainId],
     enabled: Boolean(current),
-    queryFn: () => readChainHead(current!.chainId, current!.address),
+    queryFn: () => readChainHead(current!.chainId),
   });
   const roles = useQuery({
     queryKey: ["roles", current?.chainId, current?.address, address],
@@ -53,7 +52,7 @@ export function HomePage() {
     event.preventDefault();
     setLookupError(null);
     if (!current) {
-      setLookupError("No current deployment is configured.");
+      setLookupError(writeTargetMessage(target));
       return;
     }
     if (!validateBatchCode(batchCode)) {
@@ -90,33 +89,20 @@ export function HomePage() {
         <Row label="Indexer last processed block">
           {health.isSuccess ? health.data.lastProcessedBlock : "unavailable"}
         </Row>
-        <Row label="Current contract">
-          {listed ? (
-            <span className="mono">
-              chain {listed.chainId} {listed.address} ({listed.label})
-            </span>
-          ) : current ? (
-            <span>
-              <span className="mono">
-                chain {current.chainId} {current.address}
-              </span>
-              . This address comes from VITE_CONTRACT_ADDRESS and is not in trusted-deployments.json, so verification
-              will not show a green seal for it.
+        <Row label="Write contract">
+          {current ? (
+            <span className="mono" data-testid="write-contract">
+              chain {current.chainId} {current.address} ({current.label})
             </span>
           ) : (
-            "No current deployment is configured."
+            writeTargetMessage(target)
           )}
         </Row>
-        {envAddress && listed && envAddress !== listed.address ? (
-          <Row label="VITE_CONTRACT_ADDRESS">
-            <span className="mono">{envAddress}</span> does not match the current trusted deployment.
-          </Row>
-        ) : null}
       </Rows>
 
-      <h2>Roles on the current contract</h2>
+      <h2>Roles on the write contract</h2>
       {!address ? <p>Connect a wallet to read roles.</p> : null}
-      {address && !current ? <p>Roles are read from the current contract. None is configured.</p> : null}
+      {address && !current ? <p>Roles are read from the write contract. None is configured.</p> : null}
       {roles.isError ? <p className="revert">Roles could not be read from the contract.</p> : null}
       {roles.data ? (
         <Rows>

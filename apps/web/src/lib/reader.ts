@@ -10,7 +10,7 @@ import {
   type Log,
 } from "viem";
 import { productRegistryAbi } from "../contracts/ProductRegistry.ts";
-import { currentListedDeployment, findDeployment, readerUrl, type Deployment } from "./deployments.ts";
+import { describeTrust, findDeployment, readerUrl, type Trust } from "./deployments.ts";
 import { fetchIpfsBytes, judgeDocument } from "./document.ts";
 import { contractErrorText } from "./errors.ts";
 import { READER_FAILURE } from "./failures.ts";
@@ -18,11 +18,6 @@ import { asAddress, asBigint, castGetBatch } from "./format.ts";
 import { LogsUnavailable, readLogsInChunks } from "./logRange.ts";
 import { decodeProductLogs, historyDisagrees, logsForBatch, type ProductLog } from "./logs.ts";
 import { DEFAULT_ADMIN_ROLE, MANUFACTURER_ROLE, RECALL_ROLE } from "./roles.ts";
-
-export type Trust =
-  | { kind: "current"; label: string }
-  | { kind: "earlier"; label: string; current: Deployment | null }
-  | { kind: "unrecognized" };
 
 export type HandoffView = {
   from: Address;
@@ -71,13 +66,6 @@ export type VerifyResult =
       cast: string;
     };
 
-export function describeTrust(chainId: number, contract: Address): Trust {
-  const matched = findDeployment(chainId, contract);
-  if (!matched) return { kind: "unrecognized" };
-  if (matched.current) return { kind: "current", label: matched.label };
-  return { kind: "earlier", label: matched.label, current: currentListedDeployment() };
-}
-
 type ReaderClient = {
   getChainId(): Promise<number>;
   readContract(parameters: {
@@ -103,7 +91,7 @@ export async function loadVerification(
   const trust = describeTrust(chainId, contract);
   if (!validateBatchCode(batchCode)) return { kind: "invalid-code", batchCode };
   const batchId = computeBatchId(batchCode);
-  const endpoint = io && "endpoint" in io ? (io.endpoint ?? null) : readerUrl(chainId, contract);
+  const endpoint = io && "endpoint" in io ? (io.endpoint ?? null) : readerUrl(chainId);
   if (!endpoint) return { kind: "cannot-read", chainId };
 
   const client: ReaderClient =
@@ -224,7 +212,7 @@ export type LoadedBatch = {
 
 export async function loadBatch(chainId: number, contract: Address, batchCode: string): Promise<LoadedBatch> {
   if (!validateBatchCode(batchCode)) throw new Error("InvalidBatchCode");
-  const endpoint = readerUrl(chainId, contract);
+  const endpoint = readerUrl(chainId);
   if (!endpoint) throw new Error(`This site cannot read chain ${chainId}.`);
   const client = createPublicClient({ transport: http(endpoint, { batch: false, timeout: 20_000 }) });
   const reported = await client.getChainId();
@@ -257,8 +245,8 @@ export async function loadBatch(chainId: number, contract: Address, batchCode: s
   };
 }
 
-export async function readChainHead(chainId: number, contract: Address): Promise<bigint> {
-  const endpoint = readerUrl(chainId, contract);
+export async function readChainHead(chainId: number): Promise<bigint> {
+  const endpoint = readerUrl(chainId);
   if (!endpoint) throw new Error(`This site cannot read chain ${chainId}.`);
   const client = createPublicClient({ transport: http(endpoint, { batch: false, timeout: 20_000 }) });
   const reported = await client.getChainId();
@@ -271,7 +259,7 @@ export async function readRoles(chainId: number, contract: Address, account: Add
   manufacturer: boolean;
   recall: boolean;
 }> {
-  const endpoint = readerUrl(chainId, contract);
+  const endpoint = readerUrl(chainId);
   if (!endpoint) throw new Error(`This site cannot read chain ${chainId}.`);
   const client = createPublicClient({ transport: http(endpoint, { batch: false, timeout: 20_000 }) });
   const [admin, manufacturer, recall] = await Promise.all([

@@ -7,7 +7,7 @@ import { QrCard } from "../components/QrCard.tsx";
 import { Row, Rows } from "../components/Rows.tsx";
 import { DEMO_DOCUMENT } from "../demo.ts";
 import { submitAction } from "../lib/actions.ts";
-import { currentDeployment } from "../lib/deployments.ts";
+import { writeTarget, writeTargetMessage } from "../lib/deployments.ts";
 import { registrationFailureText } from "../lib/failures.ts";
 import { originIsLoopback, parseOrigin, verificationUrl } from "../lib/format.ts";
 import { pinBlob, pinMetadata } from "../lib/pin.ts";
@@ -27,7 +27,8 @@ export function RegisterPage() {
   const account = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
-  const current = currentDeployment();
+  const target = writeTarget();
+  const current = target.kind === "ready" ? target.deployment : null;
   const [name, setName] = useState<string>(DEMO_DOCUMENT.name);
   const [sku, setSku] = useState<string>(DEMO_DOCUMENT.sku);
   const [batchCode, setBatchCode] = useState<string>(DEMO_DOCUMENT.batchCode);
@@ -54,8 +55,8 @@ export function RegisterPage() {
       setMessage("Connect a wallet before registering.");
       return;
     }
-    if (!currentDeployment()) {
-      setMessage("No current deployment is configured.");
+    if (!current) {
+      setMessage(writeTargetMessage(target));
       return;
     }
     setPending(true);
@@ -90,19 +91,18 @@ export function RegisterPage() {
       const txHash = await submitAction({
         action: {
           functionName: "registerBatch",
-          args: [batchCode, localHash, pinnedDocument.cid],
+          args: [batchCode, canonical, pinnedDocument.cid],
         },
+        deployment: current,
         account: account.address,
         walletChainId: account.chainId,
         switchChain: (chainId) => switchChainAsync({ chainId }),
         write: writeContractAsync,
       });
-      const deployment = currentDeployment();
-      if (!deployment) throw new Error("No current deployment is configured.");
       setReceipt({
         batchCode,
-        contract: deployment.address,
-        chainId: deployment.chainId,
+        contract: current.address,
+        chainId: current.chainId,
         metadataHash: localHash,
         cid: pinnedDocument.cid,
         txHash,
@@ -131,7 +131,9 @@ export function RegisterPage() {
             : ""}
         </p>
       ) : (
-        <p className="warning">No current deployment is configured. Add one to trusted-deployments.json before registering.</p>
+        <p className="warning" data-testid="write-not-configured">
+          {writeTargetMessage(target)}
+        </p>
       )}
 
       <label className="field">

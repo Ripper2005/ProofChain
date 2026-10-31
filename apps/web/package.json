@@ -6,6 +6,7 @@
   "scripts": {
     "generate:abi": "node scripts/generate-abi.mjs",
     "dev": "vite --host 0.0.0.0 --port 5173",
+    "dev:sepolia": "vite --mode sepolia --host 127.0.0.1 --port 5173",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "test": "node --experimental-strip-types --test test/*.test.ts"
   },

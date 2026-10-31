@@ -3,6 +3,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+!apps/web/.env.sepolia
 
 # Foundry build and local deploy receipts
 contracts/cache/

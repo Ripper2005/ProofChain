@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { applyLog } from "../src/apply.ts";
+import type { BatchRegisteredPayload } from "../src/events.ts";
 import { MemoryStore } from "../src/memory-store.ts";
 import { blockRanges, resync, syncOnce, type SyncState } from "../src/sync.ts";
 import { FakeChain, hexWord } from "./fake-chain.ts";
@@ -13,6 +14,7 @@ import {
   batchId,
   CANCELLED,
   CREATED,
+  document,
   GOLDEN_BATCH_ID,
   manufacturer,
   metadataCid,
@@ -163,6 +165,7 @@ describe("projection", () => {
     const registered = logs.find((log) => log.eventName === "BatchRegistered");
     const transferred = logs.find((log) => log.txHash === accepted);
     assert.ok(registered && transferred);
+    assert.equal((registered.payload as BatchRegisteredPayload).document, document);
     await applyLog(store, registered);
     await applyLog(store, transferred);
     await applyLog(store, transferred);
@@ -256,6 +259,7 @@ describe("projection", () => {
       metadataHash,
       metadataCid,
       createdAt: unix(CREATED),
+      document,
     });
     await expectSync(store, chain, config, state);
 
@@ -469,6 +473,7 @@ function registration(chain: FakeChain, tx: number, blockNumber: number, logInde
     metadataHash,
     metadataCid,
     createdAt: unix(CREATED),
+    document,
   });
 }
 

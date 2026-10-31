@@ -8,6 +8,10 @@ export default defineConfig(({ mode }) => {
   const pinUrl = env.PIN_URL || "http://127.0.0.1:8788";
   const indexerUrl = env.INDEXER_URL || "http://127.0.0.1:8787";
   const ipfsGatewayUrl = env.IPFS_GATEWAY_URL || "http://127.0.0.1:8080";
+  const allowedHosts = (env.ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((host) => host.trim())
+    .filter((host) => host.length > 0);
 
   return {
     plugins: [
@@ -42,7 +46,7 @@ export default defineConfig(({ mode }) => {
       host: "0.0.0.0",
       port: 5173,
       strictPort: true,
-      allowedHosts: true,
+      allowedHosts,
     },
   };
 });
