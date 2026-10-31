@@ -1,11 +1,13 @@
+# The build context is the repository root. Secrets and build output stay out of every image.
 .git
 **/.git
 **/node_modules
 **/.pnpm-store
-contracts/cache
-contracts/out
-contracts/lib
-**/.env
-**/.env.*
 **/dist
+contracts/lib
+contracts/out
+contracts/cache
+contracts/broadcast
+**/.env*
+!.env.example
 *.md

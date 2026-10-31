@@ -1,6 +1,6 @@
 # ProofChain master plan
 
-Status: phase 1 (packages 1 through 4 and the integration files) is accepted and was re-audited on 30 October 2026. Packages 5, 6, and 7 were accepted on 31 October 2026. Packages 8 through 13 in section 18 are the remaining work. The private repository is https://github.com/Ripper2005/ProofChain, branch `master`.
+Status: phase 1 (packages 1 through 4 and the integration files) is accepted and was re-audited on 30 October 2026. Packages 5 through 9 were accepted on 31 October 2026. Packages 10 through 13 in section 18 are the remaining work. The private repository is https://github.com/Ripper2005/ProofChain, branch `master`.
 Last updated: 31 October 2026.
 Repository root: `/home/harsha/Documents/Blockchain Project/`.
 Quality is not tied to a calendar date. Nothing in section 18 is dropped to save time.
@@ -1109,6 +1109,8 @@ Re-check before relying on this. Observed on 30 October 2026 during the audit.
 | 2026-10-31 | Package 6 accepted. The public copy is a plain Pinata v3 upload with `cid_version=v1`, which Pinata documents as Kubo's `cid-version=1` layout. A CID mismatch fails closed whatever `PIN_REQUIRE_PUBLIC` says. CAR upload needs a paid plan and pin-by-CID needs the laptop reachable, so neither was used. A body over 5 MB now gets the 413 response instead of a reset connection. The live Pinata check waits on `PINATA_JWT`. |
 | 2026-10-31 | Package 7 done by the orchestrator. The npm lockfiles and Foundry's template README and workflow are deleted. `pnpm check` runs `scripts/check.mjs`, which finds Foundry in `~/.foundry/bin` by itself, builds the hosted bundle in mode sepolia, and scans it for the forbidden names, the four Anvil keys, and the values of `PRIVATE_KEY` and `PINATA_JWT` from `.env` without printing them. A planted string made it fail at the scan. |
 | 2026-10-31 | Package 6 live check passed with Harsha's key: Pinata returned Kubo's CID for the golden document, a PNG, and a multi-chunk file. The pin service now reads only its own six variables from the root `.env`. |
+| 2026-10-31 | Package 8 accepted. `packages/verifier` is the one implementation of agreement, the document checks, and the seal, and `pnpm verify-batch` is its second client. The CLI and the page agree on both local batches and on the five Sepolia readers agreeing that the v1 contract has no batch. A static build contacted only its own origin and those readers. An empty gateway list means same-origin `/ipfs` only while `pnpm dev` is running. The hosted mode lists the Pinata gateways. |
+| 2026-10-31 | Package 9 accepted after the executor stopped before its report. The orchestrator re-read the sync and Compose files and re-ran the 33 indexer tests. The executor's own live log records the reorg rewind, the Anvil restart, the RPC outage, a 133,182-block Sepolia catch-up in 70 requests, and a Compose run from an empty state. Its `sudo -n true` was a no-password probe, changed nothing, and is not to be repeated. Images are pinned: `postgres:16.15-alpine`, `node:24.22.1-bookworm-slim`, `ipfs/kubo:v0.43.1`, `ghcr.io/foundry-rs/foundry:v1.8.6`. |
 
 ## 21. Considered and not taken
 

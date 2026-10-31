@@ -24,6 +24,8 @@ describe("loadConfig", () => {
     assert.equal(config.contractAddress, "0xabababababababababababababababababababab");
     assert.equal(config.startBlock, 4);
     assert.equal(config.confirmations, 0);
+    assert.equal(config.reorgWindow, 64);
+    assert.equal(config.logRange, 50_000);
     assert.equal(config.ipfsApiUrl, LOCAL_IPFS_API_URL);
     assert.equal(config.port, 8787);
     assert.equal(config.host, "127.0.0.1");
@@ -35,6 +37,14 @@ describe("loadConfig", () => {
   it("uses two confirmations for Sepolia unless the environment sets them", () => {
     assert.equal(loadConfig({ ...required, CHAIN_ID: "11155111" }).confirmations, 2);
     assert.equal(loadConfig({ ...required, CHAIN_ID: "11155111", CONFIRMATIONS: "0" }).confirmations, 0);
+  });
+
+  it("reads the reorg window and the log range and refuses zero for either", () => {
+    const config = loadConfig({ ...required, REORG_WINDOW: "128", LOG_RANGE: "10000" });
+    assert.equal(config.reorgWindow, 128);
+    assert.equal(config.logRange, 10_000);
+    assert.throws(() => loadConfig({ ...required, LOG_RANGE: "0" }), /LOG_RANGE/);
+    assert.throws(() => loadConfig({ ...required, REORG_WINDOW: "0" }), /REORG_WINDOW/);
   });
 
   it("refuses to start without a contract or a start block", () => {

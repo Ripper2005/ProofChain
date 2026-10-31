@@ -3,8 +3,9 @@ import { describe, it } from "node:test";
 import { applyLog } from "../src/apply.ts";
 import type { BatchRegisteredPayload } from "../src/events.ts";
 import { MemoryStore } from "../src/memory-store.ts";
-import { blockRanges, resync, syncOnce, type SyncState } from "../src/sync.ts";
-import { FakeChain, hexWord } from "./fake-chain.ts";
+import type { IndexStore } from "../src/store.ts";
+import { resync, syncOnce, type SyncState } from "../src/sync.ts";
+import { FakeChain, hexWord, rangeRejection, rateLimited, requestTimeout } from "./fake-chain.ts";
 import {
   ACCEPTED,
   accountB,
@@ -27,14 +28,165 @@ import {
   unix,
 } from "./fixture.ts";
 
-describe("block ranges", () => {
-  it("keeps each eth_getLogs span to 2000 blocks", () => {
-    assert.deepEqual(blockRanges(0, 1999), [[0, 1999]]);
-    assert.deepEqual(blockRanges(0, 2000), [
-      [0, 1999],
-      [2000, 2000],
+class CountingStore extends MemoryStore {
+  commits: Array<{ block: number | null; hash: string | null }> = [];
+
+  async transaction<T>(fn: (tx: IndexStore) => Promise<T>): Promise<T> {
+    const result = await super.transaction(fn);
+    this.commits.push({ block: this.meta?.lastProcessedBlock ?? null, hash: this.meta?.lastProcessedHash ?? null });
+    return result;
+  }
+}
+
+const WINDOW = heights(99_937, 100_000);
+
+describe("catch-up", () => {
+  it("a catch-up across 100,000 blocks with three product logs fetches headers only for those blocks, the start block, and the window, and commits per range", async () => {
+    const { chain, store, config } = longChain();
+    await expectSync(store, chain, config, { paused: false });
+
+    assert.deepEqual(chain.logRanges, [
+      [1, 50_000],
+      [50_001, 100_000],
     ]);
-    assert.deepEqual(blockRanges(5, 5), [[5, 5]]);
+    assert.deepEqual(chain.blockReads, [1, 7, 50_001, ...WINDOW]);
+    assert.deepEqual(store.commits, [
+      { block: 50_000, hash: null },
+      { block: 100_000, hash: chain.hashOf(100_000) },
+    ]);
+    assert.deepEqual(storedHeights(store), [1, 7, 50_001, ...WINDOW]);
+    assert.equal((await store.getMeta())?.startBlockHash, chain.hashOf(1));
+    assert.equal((await store.getBatchById(batchId))?.currentCustodian, accountB);
+    assert.equal((await store.listCustody(batchId)).length, 1);
+
+    chain.blockReads = [];
+    chain.logRanges = [];
+    chain.head = 100_070;
+    await expectSync(store, chain, config, { paused: false });
+    assert.deepEqual(chain.logRanges, [[100_001, 100_070]]);
+    assert.deepEqual(chain.blockReads, [1, 100_000, ...heights(100_007, 100_070)]);
+    assert.deepEqual(storedHeights(store), [1, 7, 50_001, 99_990, ...heights(100_007, 100_070)]);
+    assert.equal((await store.getMeta())?.lastProcessedHash, chain.hashOf(100_070));
+  });
+
+  it("a failure in a later range keeps the earlier ranges and the next tick continues from them", async () => {
+    const { chain, store, config } = longChain();
+    const state: SyncState = { paused: false };
+    chain.logFailure = (fromBlock) => (fromBlock > 50_000 ? new Error("rpc down") : undefined);
+    const failed = await syncOnce(store, chain, config, state);
+    assert.equal(failed.syncOk, false);
+    assert.equal(failed.reason, "rpc down");
+    assert.equal(state.paused, false);
+    assert.equal((await store.getMeta())?.lastProcessedBlock, 50_000);
+    assert.equal((await store.getMeta())?.lastProcessedHash, null);
+    assert.equal(store.logs.length, 1);
+    assert.equal((await store.getBatchById(batchId))?.currentCustodian, manufacturer);
+    assert.deepEqual(storedHeights(store), [1, 7]);
+
+    chain.logFailure = undefined;
+    chain.blockReads = [];
+    chain.logRanges = [];
+    await expectSync(store, chain, config, state);
+    assert.deepEqual(chain.logRanges, [[50_001, 100_000]]);
+    assert.deepEqual(chain.blockReads, [1, 50_000, 7, 50_001, ...WINDOW]);
+    assert.equal(store.logs.length, 3);
+    assert.equal((await store.getBatchById(batchId))?.currentCustodian, accountB);
+    assert.equal((await store.getMeta())?.lastProcessedHash, chain.hashOf(100_000));
+  });
+
+  it("a cursor left between ranges rewinds when the newest stored header below it was replaced", async () => {
+    const { chain, store, config } = longChain();
+    chain.logFailure = (fromBlock) => (fromBlock > 50_000 ? new Error("rpc down") : undefined);
+    assert.equal((await syncOnce(store, chain, config, { paused: false })).syncOk, false);
+    const oldTx = store.logs[0]?.txHash;
+
+    chain.logFailure = undefined;
+    chain.setBlockHash(7, hexWord(4242));
+    chain.logs = chain.logs.filter((log) => log.blockNumber !== 7);
+    const moved = registration(chain, 9, 8, 0);
+    await expectSync(store, chain, config, { paused: false });
+
+    assert.equal((await store.listLogs()).some((log) => log.txHash === oldTx), false);
+    assert.equal((await store.getBatchById(batchId))?.createdTx, moved);
+    assert.equal((await store.getBatchById(batchId))?.createdBlock, 8);
+    assert.equal((await store.getBatchById(batchId))?.currentCustodian, accountB);
+    assert.equal(await store.getBlock(7), null);
+    assert.equal((await store.getBlock(8))?.hash, chain.hashOf(8));
+  });
+
+  it("a reorg below the window walks only the stored headers to the common ancestor", async () => {
+    const { chain, store, config } = longChain();
+    await expectSync(store, chain, config, { paused: false });
+
+    for (const height of [50_001, ...WINDOW]) chain.setBlockHash(height, hexWord(900_000 + height));
+    chain.logs = chain.logs.filter((log) => log.blockNumber === 7);
+    chain.blockReads = [];
+    chain.logRanges = [];
+    await expectSync(store, chain, config, { paused: false });
+
+    assert.deepEqual(chain.blockReads, [1, 100_000, ...[...WINDOW].reverse(), 50_001, 7, ...WINDOW]);
+    assert.deepEqual(chain.logRanges, [
+      [8, 50_007],
+      [50_008, 100_000],
+    ]);
+    assert.deepEqual(storedHeights(store), [1, 7, ...WINDOW]);
+    assert.equal((await store.getBlock(100_000))?.hash, chain.hashOf(100_000));
+    assert.equal((await store.listCustody(batchId)).length, 0);
+    assert.equal((await store.getBatchById(batchId))?.currentCustodian, manufacturer);
+    assert.equal(await store.getPending(batchId), null);
+  });
+
+  it("a range rejection halves the range and continues", async () => {
+    const { chain, store, config } = longChain();
+    chain.logFailure = (fromBlock, toBlock) => (toBlock - fromBlock + 1 > 20_000 ? rangeRejection(20_000) : undefined);
+    await expectSync(store, chain, config, { paused: false });
+
+    const accepted = Array.from({ length: 8 }, (_, index): [number, number] => [index * 12_500 + 1, (index + 1) * 12_500]);
+    assert.deepEqual(chain.logRanges, [[1, 50_000], [1, 25_000], ...accepted]);
+    assert.equal(store.commits.length, 8);
+    assert.equal(store.logs.length, 3);
+    assert.equal((await store.getMeta())?.lastProcessedBlock, 100_000);
+    assert.equal((await store.getBatchById(batchId))?.currentCustodian, accountB);
+  });
+
+  it("a timeout halves the range and continues", async () => {
+    const { chain, store, config } = longChain();
+    let timedOut = false;
+    chain.logFailure = () => {
+      if (timedOut) return undefined;
+      timedOut = true;
+      return requestTimeout();
+    };
+    await expectSync(store, chain, config, { paused: false });
+
+    assert.deepEqual(chain.logRanges, [
+      [1, 50_000],
+      [1, 25_000],
+      [25_001, 50_000],
+      [50_001, 75_000],
+      [75_001, 100_000],
+    ]);
+    assert.equal(store.commits.length, 4);
+    assert.equal((await store.getBatchById(batchId))?.currentCustodian, accountB);
+  });
+
+  it("reports a one-block range that still times out and does not shrink on a rate limit", async () => {
+    const chain = new FakeChain();
+    const store = new MemoryStore();
+    registration(chain, 1, 0, 0);
+    chain.logFailure = () => requestTimeout();
+    const timedOut = await syncOnce(store, chain, testConfig(), { paused: false });
+    assert.equal(timedOut.syncOk, false);
+    assert.deepEqual(chain.logRanges, [[0, 0]]);
+    assert.equal(store.meta, null);
+
+    chain.head = 3;
+    chain.logRanges = [];
+    chain.logFailure = () => rateLimited();
+    const limited = await syncOnce(store, chain, testConfig(), { paused: false });
+    assert.equal(limited.syncOk, false);
+    assert.deepEqual(chain.logRanges, [[0, 3]]);
+    assert.equal(store.meta, null);
   });
 });
 
@@ -464,6 +616,33 @@ describe("sync rules", () => {
     assert.equal(failed.reason, "rpc unavailable");
   });
 });
+
+function longChain(): { chain: FakeChain; store: CountingStore; config: ReturnType<typeof testConfig> } {
+  const chain = new FakeChain();
+  registration(chain, 1, 7, 0);
+  addProductLog(chain, 2, 50_001, 0, "CustodyTransferProposed", {
+    batchId,
+    from: manufacturer,
+    to: accountB,
+    proposedAt: unix(PROPOSED),
+  });
+  addProductLog(chain, 3, 99_990, 0, "CustodyTransferred", {
+    batchId,
+    from: manufacturer,
+    to: accountB,
+    timestamp: unix(ACCEPTED),
+  });
+  chain.head = 100_000;
+  return { chain, store: new CountingStore(), config: testConfig({ startBlock: 1 }) };
+}
+
+function heights(from: number, to: number): number[] {
+  return Array.from({ length: to - from + 1 }, (_, index) => from + index);
+}
+
+function storedHeights(store: MemoryStore): number[] {
+  return [...store.blocks.keys()].sort((left, right) => left - right);
+}
 
 function registration(chain: FakeChain, tx: number, blockNumber: number, logIndex: number): string {
   return addProductLog(chain, tx, blockNumber, logIndex, "BatchRegistered", {

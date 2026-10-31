@@ -74,11 +74,13 @@ export interface IndexStore {
   transaction<T>(fn: (tx: IndexStore) => Promise<T>): Promise<T>;
   getMeta(): Promise<IndexerMeta | null>;
   insertMeta(meta: IndexerMeta): Promise<void>;
-  updateCursor(blockNumber: number, hash: string): Promise<void>;
+  updateCursor(blockNumber: number, hash: string | null): Promise<void>;
   truncateAll(): Promise<void>;
   insertBlock(block: BlockRow): Promise<void>;
   getBlock(number: number): Promise<BlockRow | null>;
+  getBlockAtOrBelow(number: number): Promise<BlockRow | null>;
   deleteBlocksAbove(number: number): Promise<void>;
+  pruneBlocks(below: number, keep: number): Promise<void>;
   insertLog(log: Omit<StoredLog, "applied">): Promise<boolean>;
   listLogs(): Promise<StoredLog[]>;
   deleteLogsAbove(blockNumber: number): Promise<void>;

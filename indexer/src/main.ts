@@ -33,7 +33,6 @@ async function main(): Promise<void> {
     config: syncConfig,
     intervalMs: config.pollIntervalMs,
   });
-  await loop.tick();
 
   const app = createApp({
     store,
@@ -63,6 +62,7 @@ async function main(): Promise<void> {
   server.listen(config.port, config.host, () => {
     console.log(`indexer listening on ${config.host}:${config.port}`);
   });
+  void loop.tick();
   loop.start();
 }
 

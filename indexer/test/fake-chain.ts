@@ -1,3 +1,4 @@
+import { HttpRequestError, RpcRequestError, TimeoutError } from "viem";
 import type { ChainReader } from "../src/chain.ts";
 import type { RawLog } from "../src/events.ts";
 
@@ -9,6 +10,7 @@ export class FakeChain implements ChainReader {
   logs: RawLog[] = [];
   blockReads: number[] = [];
   logRanges: Array<[number, number]> = [];
+  logFailure: ((fromBlock: number, toBlock: number) => Error | undefined) | undefined;
   private custom = new Map<number, { hash: string; parentHash: string }>();
   private missing = new Set<number>();
 
@@ -60,11 +62,29 @@ export class FakeChain implements ChainReader {
   async getLogs(fromBlock: number, toBlock: number): Promise<RawLog[]> {
     this.logRanges.push([fromBlock, toBlock]);
     if (this.fail) throw new Error("rpc down");
+    const failure = this.logFailure?.(fromBlock, toBlock);
+    if (failure) throw failure;
     return this.logs
       .filter((log) => log.blockNumber >= fromBlock && log.blockNumber <= toBlock)
       .sort((left, right) => left.blockNumber - right.blockNumber || left.logIndex - right.logIndex)
       .map((log) => ({ ...log, topics: [...log.topics] }));
   }
+}
+
+export function rangeRejection(limit: number): Error {
+  return new RpcRequestError({
+    body: { method: "eth_getLogs" },
+    error: { code: -32701, message: `exceed maximum block range: ${limit}` },
+    url: "http://fake.rpc",
+  });
+}
+
+export function requestTimeout(): Error {
+  return new TimeoutError({ body: { method: "eth_getLogs" }, url: "http://fake.rpc" });
+}
+
+export function rateLimited(): Error {
+  return new HttpRequestError({ body: { method: "eth_getLogs" }, status: 429, details: "Too Many Requests", url: "http://fake.rpc" });
 }
 
 export function hexWord(value: number): string {

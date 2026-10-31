@@ -123,7 +123,7 @@ export class PgStore implements IndexStore {
     );
   }
 
-  async updateCursor(blockNumber: number, hash: string): Promise<void> {
+  async updateCursor(blockNumber: number, hash: string | null): Promise<void> {
     const result = await this.query(
       `UPDATE indexer_meta SET last_processed_block = $1, last_processed_hash = $2 WHERE singleton = TRUE`,
       [blockNumber, hash],
@@ -165,8 +165,28 @@ export class PgStore implements IndexStore {
     return { number: num(row.number), hash: str(row.hash), parentHash: str(row.parent_hash) };
   }
 
+  async getBlockAtOrBelow(number: number): Promise<BlockRow | null> {
+    const result = await this.query(
+      "SELECT number, hash, parent_hash FROM blocks WHERE number <= $1 ORDER BY number DESC LIMIT 1",
+      [number],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return { number: num(row.number), hash: str(row.hash), parentHash: str(row.parent_hash) };
+  }
+
   async deleteBlocksAbove(number: number): Promise<void> {
     await this.query("DELETE FROM blocks WHERE number > $1", [number]);
+  }
+
+  async pruneBlocks(below: number, keep: number): Promise<void> {
+    await this.query(
+      `DELETE FROM blocks
+       WHERE number < $1
+         AND number <> $2
+         AND NOT EXISTS (SELECT 1 FROM logs WHERE logs.block_number = blocks.number)`,
+      [below, keep],
+    );
   }
 
   async insertLog(log: Omit<StoredLog, "applied">): Promise<boolean> {

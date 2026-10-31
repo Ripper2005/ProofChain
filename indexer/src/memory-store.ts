@@ -51,7 +51,7 @@ export class MemoryStore implements IndexStore {
     this.meta = { ...meta };
   }
 
-  async updateCursor(blockNumber: number, hash: string): Promise<void> {
+  async updateCursor(blockNumber: number, hash: string | null): Promise<void> {
     if (!this.meta) throw new Error("indexer_meta is missing");
     this.meta = { ...this.meta, lastProcessedBlock: blockNumber, lastProcessedHash: hash };
   }
@@ -79,9 +79,24 @@ export class MemoryStore implements IndexStore {
     return block ? { ...block } : null;
   }
 
+  async getBlockAtOrBelow(number: number): Promise<BlockRow | null> {
+    let best: BlockRow | undefined;
+    for (const block of this.blocks.values()) {
+      if (block.number <= number && (!best || block.number > best.number)) best = block;
+    }
+    return best ? { ...best } : null;
+  }
+
   async deleteBlocksAbove(number: number): Promise<void> {
     for (const height of [...this.blocks.keys()]) {
       if (height > number) this.blocks.delete(height);
+    }
+  }
+
+  async pruneBlocks(below: number, keep: number): Promise<void> {
+    const logBlocks = new Set(this.logs.map((log) => log.blockNumber));
+    for (const height of [...this.blocks.keys()]) {
+      if (height < below && height !== keep && !logBlocks.has(height)) this.blocks.delete(height);
     }
   }
 

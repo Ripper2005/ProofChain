@@ -29,6 +29,8 @@ export function testConfig(overrides: Partial<SyncConfig> = {}): SyncConfig {
     contractAddress,
     startBlock: 0,
     confirmations: 0,
+    reorgWindow: 64,
+    logRange: 50_000,
     ...overrides,
   };
 }

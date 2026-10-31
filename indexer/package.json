@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node --experimental-strip-types src/main.ts",
     "resync": "node --experimental-strip-types src/main.ts --resync",
-    "test": "node --experimental-strip-types --test test/events.test.ts test/config.test.ts test/sync.test.ts test/api.test.ts"
+    "test": "node --experimental-strip-types --test test/events.test.ts test/config.test.ts test/chain.test.ts test/sync.test.ts test/api.test.ts"
   },
   "dependencies": {
     "hono": "4.10.4",
