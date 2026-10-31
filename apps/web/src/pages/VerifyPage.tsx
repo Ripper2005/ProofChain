@@ -4,7 +4,6 @@ import {
   checkText,
   readerStatusText,
   SEAL_RULE,
-  stepText,
   verifyBatch,
   type DocumentReport,
   type RegisteredOutcome,
@@ -15,7 +14,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { getAddress, isAddress, type Hex } from "viem";
+import { getAddress, isAddress, keccak256, toBytes, type Hex } from "viem";
+import { AddressChip } from "../components/AddressChip.tsx";
 import { Row, Rows } from "../components/Rows.tsx";
 import { ipfsGateways, isSameOriginRpc, readerUrls, trustedDeployments, type Trust } from "../lib/deployments.ts";
 import { ipfsFileUrl } from "../lib/document.ts";
@@ -130,10 +130,11 @@ function ResultView({ result }: { result: VerificationResult }) {
 
 function RegisteredView({ result, outcome }: { result: VerificationResult; outcome: RegisteredOutcome }) {
   const { batch, document } = outcome;
+  const onChainText = document.onChain.status === "read" ? document.onChain.judgement.text : null;
   return (
     <div>
       <TrustBanner trust={result.trust} />
-      <div className="actions">
+      <div className="actions" data-testid="status-line">
         {batch.status === "recalled" ? (
           <span className="seal seal-alert" data-testid="recalled-seal">
             Recalled
@@ -155,8 +156,6 @@ function RegisteredView({ result, outcome }: { result: VerificationResult; outco
       </div>
       <SealRule seal={result.seal} />
 
-      <AgreementPanel result={result} />
-
       <h2>Batch</h2>
       <Rows>
         <Row label="Batch code">
@@ -164,14 +163,14 @@ function RegisteredView({ result, outcome }: { result: VerificationResult; outco
         </Row>
         <Row label="Status">{batch.status === "recalled" ? "Recalled" : batch.status === "active" ? "Active" : "None"}</Row>
         <Row label="Registering wallet">
-          <span className="mono">{batch.manufacturer}</span>
+          <AddressChip address={batch.manufacturer} />
         </Row>
         <Row label="Manufacturer role">
           {outcome.manufacturerRole === null ? "could not be read" : outcome.manufacturerRole ? "held" : "not held"}
         </Row>
         <Row label="Current custodian">
-          <span className="mono" data-testid="current-custodian">
-            {batch.currentCustodian}
+          <span data-testid="current-custodian">
+            <AddressChip address={batch.currentCustodian} />
           </span>
         </Row>
         <Row label="Registered at">{formatUnix(batch.createdAt)}</Row>
@@ -185,6 +184,8 @@ function RegisteredView({ result, outcome }: { result: VerificationResult; outco
           <span className="mono">{batch.metadataCid}</span>
         </Row>
       </Rows>
+
+      <AgreementPanel result={result} />
 
       <h2>Custody timeline</h2>
       <p className="muted">
@@ -207,48 +208,59 @@ function RegisteredView({ result, outcome }: { result: VerificationResult; outco
 
       <DocumentSection document={document} chainId={result.chainId} />
 
-      <h2>Pending handoff</h2>
-      {outcome.pending ? (
-        <Rows>
-          <Row label="From">
-            <span className="mono">{outcome.pending.from}</span>
-          </Row>
-          <Row label="To">
-            <span className="mono">{outcome.pending.to}</span>
-          </Row>
-          <Row label="Proposed at">{formatUnix(outcome.pending.proposedAt)}</Row>
-          <Row label="Transaction">
-            <Tx hash={outcome.pending.txHash} chainId={result.chainId} />
-          </Row>
-        </Rows>
-      ) : (
-        <p>No handoff is pending. Pending is a flag on an active batch, not a third status.</p>
-      )}
+      <TamperSimulation
+        key={`${batch.metadataHash}:${onChainText === null ? "none" : "text"}`}
+        original={onChainText}
+        unavailableReason={document.onChain.status === "unavailable" ? document.onChain.reason : null}
+        metadataHash={batch.metadataHash}
+      />
 
-      <h2>Recall</h2>
-      {batch.status !== "recalled" ? <p>This batch has not been recalled.</p> : null}
-      {batch.status === "recalled" && outcome.recall ? (
-        <Rows>
-          <Row label="Recalled by">
-            <span className="mono">{outcome.recall.recalledBy ?? "unavailable"}</span>
-          </Row>
-          <Row label="Reason">
-            <span data-testid="recall-reason">
-              {outcome.recall.reason.length > 0 ? outcome.recall.reason : "No reason was given."}
-            </span>
-          </Row>
-          <Row label="Pending handoff cleared">{outcome.recall.pendingCleared ? "Yes" : "No"}</Row>
-          <Row label="Transaction">
-            <Tx hash={outcome.recall.txHash} chainId={result.chainId} />
-          </Row>
-        </Rows>
-      ) : null}
-      {batch.status === "recalled" && !outcome.recall ? (
-        <p>The recall reason is unavailable because the logs could not be loaded.</p>
-      ) : null}
+      <section data-testid="pending-handoff">
+        <h2>Pending handoff</h2>
+        {outcome.pending ? (
+          <Rows>
+            <Row label="From">
+              <AddressChip address={outcome.pending.from} />
+            </Row>
+            <Row label="To">
+              <AddressChip address={outcome.pending.to} />
+            </Row>
+            <Row label="Proposed at">{formatUnix(outcome.pending.proposedAt)}</Row>
+            <Row label="Transaction">
+              <Tx hash={outcome.pending.txHash} chainId={result.chainId} />
+            </Row>
+          </Rows>
+        ) : (
+          <p>No handoff is pending. Pending is a flag on an active batch, not a third status.</p>
+        )}
+      </section>
 
-      <ReaderNote result={result} />
+      <section data-testid="recall">
+        <h2>Recall</h2>
+        {batch.status !== "recalled" ? <p>This batch has not been recalled.</p> : null}
+        {batch.status === "recalled" && outcome.recall ? (
+          <Rows>
+            <Row label="Recalled by">
+              {outcome.recall.recalledBy ? <AddressChip address={outcome.recall.recalledBy} /> : "unavailable"}
+            </Row>
+            <Row label="Reason">
+              <span data-testid="recall-reason">
+                {outcome.recall.reason.length > 0 ? outcome.recall.reason : "No reason was given."}
+              </span>
+            </Row>
+            <Row label="Pending handoff cleared">{outcome.recall.pendingCleared ? "Yes" : "No"}</Row>
+            <Row label="Transaction">
+              <Tx hash={outcome.recall.txHash} chainId={result.chainId} />
+            </Row>
+          </Rows>
+        ) : null}
+        {batch.status === "recalled" && !outcome.recall ? (
+          <p>The recall reason is unavailable because the logs could not be loaded.</p>
+        ) : null}
+      </section>
+
       <p>Copying this QR onto another box is possible. ProofChain checks the recorded story and which wallet signed it.</p>
+      <ReaderNote result={result} />
     </div>
   );
 }
@@ -307,9 +319,9 @@ function AgreementPanel({ result }: { result: VerificationResult }) {
 
 function TimelineItem({ step, chainId }: { step: TimelineStep; chainId: number }) {
   return (
-    <li data-step={step.kind}>
+    <li data-step={step.kind} className={step.kind === "pending" ? "timeline-open" : undefined} data-testid={step.kind === "pending" ? "timeline-open" : undefined}>
       {step.kind === "pending" ? <strong>Open step. </strong> : null}
-      {stepText(step)}
+      <TimelineCopy step={step} />
       <br />
       <span className="muted">
         {step.time === null ? "time unavailable" : formatUnix(step.time)},{" "}
@@ -317,6 +329,117 @@ function TimelineItem({ step, chainId }: { step: TimelineStep; chainId: number }
       </span>
       <Tx hash={step.txHash} chainId={chainId} />
     </li>
+  );
+}
+
+function TimelineCopy({ step }: { step: TimelineStep }) {
+  switch (step.kind) {
+    case "registered":
+      return (
+        <>
+          Registered by <AddressChip address={step.manufacturer} />
+        </>
+      );
+    case "proposed":
+      return (
+        <>
+          Handoff proposed from <AddressChip address={step.from} /> to <AddressChip address={step.to} />
+        </>
+      );
+    case "cancelled":
+      return (
+        <>
+          Handoff from <AddressChip address={step.from} /> to <AddressChip address={step.to} /> cancelled
+        </>
+      );
+    case "accepted":
+      return (
+        <>
+          Handoff accepted: custody moved from <AddressChip address={step.from} /> to <AddressChip address={step.to} />
+        </>
+      );
+    case "recalled":
+      return (
+        <>
+          Recalled
+          {step.recalledBy ? (
+            <>
+              {" "}
+              by <AddressChip address={step.recalledBy} />
+            </>
+          ) : null}
+          {recallDetail(step)}
+        </>
+      );
+    case "pending":
+      return (
+        <>
+          Open: the handoff from <AddressChip address={step.from} /> waits for <AddressChip address={step.to} /> to accept
+        </>
+      );
+  }
+}
+
+function recallDetail(step: Extract<TimelineStep, { kind: "recalled" }>): string {
+  const reason =
+    step.reason === null
+      ? ", reason unavailable because the logs could not be loaded"
+      : step.reason.length > 0
+        ? `, reason "${step.reason}"`
+        : ", no reason given";
+  return `${reason}${step.pendingCleared ? ", pending handoff cleared" : ""}`;
+}
+
+function TamperSimulation({
+  original,
+  unavailableReason,
+  metadataHash,
+}: {
+  original: string | null;
+  unavailableReason: string | null;
+  metadataHash: Hex;
+}) {
+  const [draft, setDraft] = useState(original ?? "");
+  const editedHash = original === null ? null : keccak256(toBytes(draft));
+  const matches = editedHash !== null && editedHash.toLowerCase() === metadataHash.toLowerCase();
+  return (
+    <section data-testid="tamper-simulation">
+      <h2>What would tampering look like?</h2>
+      <p>This edit stays in this browser. It changes nothing on the chain or on IPFS.</p>
+      {original === null || editedHash === null ? (
+        <p data-testid="tamper-unavailable">
+          {unavailableReason
+            ? `The on-chain document is unavailable, because ${unavailableReason}. There is no original text to edit.`
+            : "The on-chain document is not UTF-8 text. There is no original text to edit."}
+        </p>
+      ) : (
+        <>
+          <label className="field">
+            <span>On-chain document text</span>
+            <textarea
+              className="tamper-text"
+              value={draft}
+              spellCheck={false}
+              autoComplete="off"
+              onChange={(event) => setDraft(event.target.value)}
+              data-testid="tamper-text"
+            />
+          </label>
+          {matches ? (
+            <p data-testid="tamper-match">
+              <span className="seal seal-match">Match</span> keccak256 of the bytes equals the metadata hash.
+            </p>
+          ) : (
+            <p className="revert" data-testid="tamper-mismatch">
+              The edited bytes would not match the commitment.
+            </p>
+          )}
+          <p className="mono" data-testid="tamper-hash">
+            {editedHash}
+          </p>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -402,11 +525,8 @@ function TrustBanner({ trust }: { trust: Trust }) {
         <p>This is an earlier contract ({trust.label}).</p>
         {trust.current ? (
           <p>
-            The current contract on chain {trust.current.chainId} is{" "}
-            <span className="mono" data-testid="current-on-chain">
-              {trust.current.address}
-            </span>{" "}
-            ({trust.current.label}).
+            The current contract on chain {trust.current.chainId} is <AddressChip address={trust.current.address} /> (
+            {trust.current.label}).
           </p>
         ) : (
           <p>No single deployment on this chain is marked current in trusted-deployments.json.</p>
@@ -419,17 +539,21 @@ function TrustBanner({ trust }: { trust: Trust }) {
 
 function ReaderNote({ result }: { result: VerificationResult }) {
   return (
-    <section>
-      <h2>Check this read</h2>
+    <section data-testid="check-it-yourself">
+      <h2>Check it yourself</h2>
       <p>This page read the contract through the readers listed above.</p>
       {result.chainId === 11155111 ? (
         <p>
           <a href={`https://sepolia.etherscan.io/address/${result.contract}`}>Contract on the Sepolia explorer</a>
         </p>
       ) : (
-        <p>On this computer the Anvil node is http://127.0.0.1:8545. Replace &lt;YOUR_NODE_URL&gt; with a node you choose.</p>
+        <p>On this computer the Anvil node is http://127.0.0.1:8545.</p>
       )}
+      <p>Replace &lt;YOUR_NODE_URL&gt; with a node you choose.</p>
       {result.cast ? <pre className="cast">{result.cast}</pre> : null}
+      <pre className="cast" data-testid="verify-cli">
+        {`pnpm verify-batch ${window.location.href} --rpc <YOUR_NODE_URL>`}
+      </pre>
     </section>
   );
 }

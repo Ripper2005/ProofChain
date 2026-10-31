@@ -22,6 +22,7 @@ type RegistrationReceipt = {
   chainId: number;
   metadataHash: Hex;
   cid: string;
+  publicCopy: boolean;
   txHash: Hex;
 };
 
@@ -136,6 +137,7 @@ export function RegisterPage() {
         chainId: current.chainId,
         metadataHash: localHash,
         cid: pinnedDocument.cid,
+        publicCopy: pinnedDocument.public,
         txHash,
       });
       await queryClient.invalidateQueries();
@@ -263,6 +265,11 @@ export function RegisterPage() {
             </Row>
             <Row label="CID">
               <span className="mono">{receipt.cid}</span>
+            </Row>
+            <Row label="Public copy">
+              <span data-testid="public-copy">
+                {receipt.publicCopy ? "Yes" : "No. The copy is only on this computer's IPFS node."}
+              </span>
             </Row>
             <Row label="Transaction">
               <span className="mono">{receipt.txHash}</span>

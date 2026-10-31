@@ -12,7 +12,10 @@ export async function pinBlob(bytes: Uint8Array): Promise<string> {
   return body.cid;
 }
 
-export async function pinMetadata(canonical: string, batchCode: string): Promise<{ cid: string; metadataHash: Hex }> {
+export async function pinMetadata(
+  canonical: string,
+  batchCode: string,
+): Promise<{ cid: string; metadataHash: Hex; public: boolean }> {
   const response = await fetch("/api/metadata", {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
@@ -20,10 +23,15 @@ export async function pinMetadata(canonical: string, batchCode: string): Promise
   });
   const body = await readJson(response);
   if (!response.ok) throw new Error(pinMessage(body, response.status));
-  if (!body || typeof body.cid !== "string" || typeof body.metadataHash !== "string") {
-    throw new Error("Pin service response did not include a CID and metadata hash");
+  if (
+    !body ||
+    typeof body.cid !== "string" ||
+    typeof body.metadataHash !== "string" ||
+    typeof body.public !== "boolean"
+  ) {
+    throw new Error("Pin service response did not include a CID, metadata hash, and whether the copy is public");
   }
-  return { cid: body.cid, metadataHash: body.metadataHash as Hex };
+  return { cid: body.cid, metadataHash: body.metadataHash as Hex, public: body.public };
 }
 
 function blobFrom(bytes: Uint8Array): Blob {

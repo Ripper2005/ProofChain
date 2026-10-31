@@ -99,9 +99,9 @@ h2 { font-size: 1.15rem; margin: 1.6rem 0 0.55rem; }
 .field span { font-size: 0.95rem; }
 
 .rows { display: grid; gap: 0.55rem; margin: 0; }
-.rows div { display: grid; grid-template-columns: minmax(9rem, 14rem) 1fr; gap: 0.4rem 1rem; }
+.rows div { display: grid; grid-template-columns: minmax(9rem, 14rem) 1fr; gap: 0.4rem 1rem; min-width: 0; }
 .rows dt { margin: 0; color: var(--muted); }
-.rows dd { margin: 0; }
+.rows dd { margin: 0; min-width: 0; }
 
 table { width: 100%; border-collapse: collapse; }
 th, td {
@@ -152,6 +152,77 @@ pre.cast {
   background: var(--field);
   border: 1px solid var(--line);
   padding: 0.75rem;
+  max-width: 100%;
+}
+
+.address-chip {
+  --chip: var(--ink);
+  display: inline-block;
+  max-width: 100%;
+  margin: 0.05rem 0.12rem 0.05rem 0;
+  vertical-align: baseline;
+  border: 1px solid var(--chip);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chip) 14%, var(--field));
+  color: var(--chip);
+  line-height: 1.35;
+}
+
+.address-chip[open] {
+  border-radius: 0.7rem;
+  padding: 0 0.5rem 0.4rem;
+}
+
+.address-chip summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.08rem 0.5rem;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.86rem;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.address-chip summary::-webkit-details-marker,
+.address-chip summary::marker {
+  display: none;
+  content: "";
+}
+
+.address-chip summary::after {
+  content: "";
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--chip);
+  flex: none;
+}
+
+.address-full {
+  display: block;
+  max-width: 100%;
+  margin-top: 0.2rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: all;
+}
+
+.timeline-open {
+  border-left: 3px solid var(--ink);
+  padding-left: 0.55rem;
+}
+
+.tamper-text {
+  min-height: 14rem;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  max-width: 100%;
 }
 
 .qr {
@@ -166,4 +237,6 @@ pre.cast {
 @media (max-width: 640px) {
   .rows div { grid-template-columns: 1fr; gap: 0.1rem; }
   .site-header { align-items: start; }
+  .address-chip { max-width: 100%; }
+  .address-full { font-size: 0.74rem; }
 }
