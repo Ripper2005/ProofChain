@@ -4,7 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_WRITE_CHAIN_ID?: string;
   readonly VITE_PUBLIC_ORIGIN?: string;
   readonly VITE_INDEXER_URL?: string;
-  readonly VITE_IPFS_GATEWAY_URL?: string;
+  readonly VITE_IPFS_GATEWAYS?: string;
 }
 
 interface ImportMeta {

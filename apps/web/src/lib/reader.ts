@@ -1,206 +1,8 @@
-import { computeBatchId, validateBatchCode, type ProductMetadata } from "@proofchain/metadata";
-import {
-  BaseError,
-  ContractFunctionRevertedError,
-  createPublicClient,
-  http,
-  keccak256,
-  type Address,
-  type Hex,
-  type Log,
-} from "viem";
+import { computeBatchId, validateBatchCode } from "@proofchain/metadata";
+import { DEFAULT_ADMIN_ROLE, MANUFACTURER_ROLE, RECALL_ROLE } from "@proofchain/verifier";
+import { createPublicClient, fallback, http, type Address } from "viem";
 import { productRegistryAbi } from "../contracts/ProductRegistry.ts";
-import { describeTrust, findDeployment, readerUrl, type Trust } from "./deployments.ts";
-import { fetchIpfsBytes, judgeDocument } from "./document.ts";
-import { contractErrorText } from "./errors.ts";
-import { READER_FAILURE } from "./failures.ts";
-import { asAddress, asBigint, castGetBatch } from "./format.ts";
-import { LogsUnavailable, readLogsInChunks } from "./logRange.ts";
-import { decodeProductLogs, historyDisagrees, logsForBatch, type ProductLog } from "./logs.ts";
-import { DEFAULT_ADMIN_ROLE, MANUFACTURER_ROLE, RECALL_ROLE } from "./roles.ts";
-
-export type HandoffView = {
-  from: Address;
-  to: Address;
-  timestamp: bigint;
-  txHash: Hex | null;
-};
-
-export type VerifyResult =
-  | { kind: "cannot-read"; chainId: number }
-  | { kind: "rpc-error"; message: string }
-  | { kind: "invalid-code"; batchCode: string }
-  | {
-      kind: "absent";
-      trust: Trust;
-      errorText: string;
-      cast: string;
-      batchId: Hex;
-      chainId: number;
-      contract: Address;
-    }
-  | {
-      kind: "present";
-      trust: Trust;
-      chainId: number;
-      contract: Address;
-      batchId: Hex;
-      batchCode: string;
-      manufacturer: Address;
-      currentCustodian: Address;
-      metadataHash: Hex;
-      metadataCid: string;
-      status: "active" | "recalled" | "none";
-      createdAt: bigint;
-      pending: { from: Address; to: Address; proposedAt: bigint; txHash: Hex | null } | null;
-      history: HandoffView[];
-      logsUnavailable: boolean;
-      historyDisagrees: boolean;
-      manufacturerRole: boolean | null;
-      registrationTx: Hex | null;
-      recall: { reason: string; txHash: Hex | null; pendingCleared: boolean; recalledBy: Address } | null;
-      verdict: "match" | "mismatch" | "unavailable";
-      mismatchReason: string | null;
-      document: ProductMetadata | null;
-      fetchedHash: Hex | null;
-      cast: string;
-    };
-
-type ReaderClient = {
-  getChainId(): Promise<number>;
-  readContract(parameters: {
-    address: Address;
-    abi: typeof productRegistryAbi;
-    functionName: string;
-    args?: readonly unknown[];
-  }): Promise<unknown>;
-  getBlockNumber(): Promise<bigint>;
-  getLogs(parameters: { address: Address; fromBlock: bigint; toBlock: bigint }): Promise<Log[]>;
-};
-
-export async function loadVerification(
-  chainId: number,
-  contract: Address,
-  batchCode: string,
-  io?: {
-    endpoint?: string | null;
-    client?: ReaderClient;
-    fetchBytes?: (cid: string) => Promise<Uint8Array | null>;
-  },
-): Promise<VerifyResult> {
-  const trust = describeTrust(chainId, contract);
-  if (!validateBatchCode(batchCode)) return { kind: "invalid-code", batchCode };
-  const batchId = computeBatchId(batchCode);
-  const endpoint = io && "endpoint" in io ? (io.endpoint ?? null) : readerUrl(chainId);
-  if (!endpoint) return { kind: "cannot-read", chainId };
-
-  const client: ReaderClient =
-    io?.client ??
-    (createPublicClient({
-      transport: http(endpoint, { batch: false, timeout: 20_000 }),
-    }) as unknown as ReaderClient);
-  let reported: number;
-  try {
-    reported = await client.getChainId();
-  } catch {
-    return { kind: "rpc-error", message: READER_FAILURE };
-  }
-  if (reported !== chainId) return { kind: "cannot-read", chainId };
-
-  const cast = castGetBatch(contract, batchId);
-  let rawBatch: BatchStruct;
-  try {
-    rawBatch = (await client.readContract({
-      address: contract,
-      abi: productRegistryAbi,
-      functionName: "getBatch",
-      args: [batchId],
-    })) as BatchStruct;
-  } catch (error) {
-    if (isTransportFailure(error)) {
-      return { kind: "rpc-error", message: READER_FAILURE };
-    }
-    return { kind: "absent", trust, errorText: contractErrorText(error), cast, batchId, chainId, contract };
-  }
-
-  const deployment = findDeployment(chainId, contract);
-  const startBlock = deployment?.startBlock ?? 0n;
-  const [pendingResult, historyResult, roleResult, logResult, bytes] = await Promise.all([
-    readOptional(
-      () =>
-        client.readContract({
-          address: contract,
-          abi: productRegistryAbi,
-          functionName: "getPendingTransfer",
-          args: [batchId],
-        }) as Promise<PendingStruct>,
-    ),
-    readOptional(
-      () =>
-        client.readContract({
-          address: contract,
-          abi: productRegistryAbi,
-          functionName: "getCustodyHistory",
-          args: [batchId],
-        }) as Promise<HistoryStruct[]>,
-    ),
-    readOptional(
-      () =>
-        client.readContract({
-          address: contract,
-          abi: productRegistryAbi,
-          functionName: "hasRole",
-          args: [MANUFACTURER_ROLE, rawBatch.manufacturer],
-        }) as Promise<boolean>,
-    ),
-    loadDecodedLogs(client, contract, startBlock),
-    (io?.fetchBytes ?? fetchIpfsBytes)(rawBatch.metadataCid),
-  ]);
-
-  const historyRows = historyResult.ok ? historyResult.value.map(toHandoff) : [];
-  const batchLogs = logResult.ok ? logsForBatch(logResult.value, batchId) : [];
-  const logsUnavailable = !logResult.ok;
-  const disagrees = logResult.ok && historyResult.ok ? historyDisagrees(historyRows, batchLogs) : false;
-  const transferred = batchLogs.filter((log) => log.eventName === "CustodyTransferred");
-  const history: HandoffView[] = historyRows.map((row, index) => ({
-    from: asAddress(row.from) ?? (row.from as Address),
-    to: asAddress(row.to) ?? (row.to as Address),
-    timestamp: row.timestamp,
-    txHash: !logsUnavailable && !disagrees ? (transferred[index]?.transactionHash ?? null) : null,
-  }));
-
-  const pending = pendingResult.ok && pendingResult.value.active ? pendingView(pendingResult.value, batchLogs) : null;
-  const registered = batchLogs.find((log) => log.eventName === "BatchRegistered");
-  const recalled = [...batchLogs].reverse().find((log) => log.eventName === "BatchRecalled");
-  const judgement = bytes ? judgeDocument(bytes, rawBatch.metadataHash, batchCode, batchId) : null;
-
-  return {
-    kind: "present",
-    trust,
-    chainId,
-    contract,
-    batchId,
-    batchCode: rawBatch.batchCode,
-    manufacturer: rawBatch.manufacturer,
-    currentCustodian: rawBatch.currentCustodian,
-    metadataHash: rawBatch.metadataHash,
-    metadataCid: rawBatch.metadataCid,
-    status: statusName(Number(rawBatch.status)),
-    createdAt: asBigint(rawBatch.createdAt) ?? 0n,
-    pending,
-    history,
-    logsUnavailable,
-    historyDisagrees: disagrees,
-    manufacturerRole: roleResult.ok ? roleResult.value : null,
-    registrationTx: logsUnavailable ? null : (registered?.transactionHash ?? null),
-    recall: recallView(recalled, logsUnavailable),
-    verdict: bytes ? (judgement?.verdict ?? "mismatch") : "unavailable",
-    mismatchReason: judgement?.verdict === "mismatch" ? judgement.reason : null,
-    document: judgement?.document ?? null,
-      fetchedHash: bytes ? keccak256(bytes) : null,
-    cast,
-  };
-}
+import { readerUrls } from "./deployments.ts";
 
 export type LoadedBatch = {
   batchCode: string;
@@ -210,13 +12,24 @@ export type LoadedBatch = {
   pending: { from: Address; to: Address; proposedAt: bigint } | null;
 };
 
-export async function loadBatch(chainId: number, contract: Address, batchCode: string): Promise<LoadedBatch> {
-  if (!validateBatchCode(batchCode)) throw new Error("InvalidBatchCode");
-  const endpoint = readerUrl(chainId);
-  if (!endpoint) throw new Error(`This site cannot read chain ${chainId}.`);
-  const client = createPublicClient({ transport: http(endpoint, { batch: false, timeout: 20_000 }) });
+function readClient(chainId: number) {
+  const urls = readerUrls(chainId);
+  if (urls.length === 0) throw new Error(`This site cannot read chain ${chainId}.`);
+  return createPublicClient({
+    transport: fallback(urls.map((url) => http(url, { batch: false, timeout: 20_000 }))),
+  });
+}
+
+export async function checkedClient(chainId: number) {
+  const client = readClient(chainId);
   const reported = await client.getChainId();
   if (reported !== chainId) throw new Error(`This site cannot read chain ${chainId}.`);
+  return client;
+}
+
+export async function loadBatch(chainId: number, contract: Address, batchCode: string): Promise<LoadedBatch> {
+  if (!validateBatchCode(batchCode)) throw new Error("InvalidBatchCode");
+  const client = await checkedClient(chainId);
   const batchId = computeBatchId(batchCode);
   const batch = await client.readContract({
     address: contract,
@@ -234,23 +47,13 @@ export async function loadBatch(chainId: number, contract: Address, batchCode: s
     batchCode: batch.batchCode,
     manufacturer: batch.manufacturer,
     currentCustodian: batch.currentCustodian,
-    status: statusName(Number(batch.status)),
-    pending: pending.active
-      ? {
-          from: pending.from,
-          to: pending.to,
-          proposedAt: asBigint(pending.proposedAt) ?? 0n,
-        }
-      : null,
+    status: batch.status === 1 ? "active" : batch.status === 2 ? "recalled" : "none",
+    pending: pending.active ? { from: pending.from, to: pending.to, proposedAt: pending.proposedAt } : null,
   };
 }
 
 export async function readChainHead(chainId: number): Promise<bigint> {
-  const endpoint = readerUrl(chainId);
-  if (!endpoint) throw new Error(`This site cannot read chain ${chainId}.`);
-  const client = createPublicClient({ transport: http(endpoint, { batch: false, timeout: 20_000 }) });
-  const reported = await client.getChainId();
-  if (reported !== chainId) throw new Error(`This site cannot read chain ${chainId}.`);
+  const client = await checkedClient(chainId);
   return client.getBlockNumber();
 }
 
@@ -259,116 +62,16 @@ export async function readRoles(chainId: number, contract: Address, account: Add
   manufacturer: boolean;
   recall: boolean;
 }> {
-  const endpoint = readerUrl(chainId);
-  if (!endpoint) throw new Error(`This site cannot read chain ${chainId}.`);
-  const client = createPublicClient({ transport: http(endpoint, { batch: false, timeout: 20_000 }) });
-  const [admin, manufacturer, recall] = await Promise.all([
-    client.readContract({
-      address: contract,
-      abi: productRegistryAbi,
-      functionName: "hasRole",
-      args: [DEFAULT_ADMIN_ROLE, account],
-    }),
-    client.readContract({
-      address: contract,
-      abi: productRegistryAbi,
-      functionName: "hasRole",
-      args: [MANUFACTURER_ROLE, account],
-    }),
-    client.readContract({
-      address: contract,
-      abi: productRegistryAbi,
-      functionName: "hasRole",
-      args: [RECALL_ROLE, account],
-    }),
-  ]);
-  return { admin, manufacturer, recall };
-}
-
-type BatchStruct = {
-  batchCode: string;
-  manufacturer: Address;
-  currentCustodian: Address;
-  metadataHash: Hex;
-  metadataCid: string;
-  status: number;
-  createdAt: bigint;
-};
-
-type PendingStruct = {
-  from: Address;
-  to: Address;
-  proposedAt: bigint;
-  active: boolean;
-};
-
-type HistoryStruct = {
-  from: Address;
-  to: Address;
-  timestamp: bigint;
-};
-
-async function loadDecodedLogs(client: ReaderClient, contract: Address, startBlock: bigint) {
-  try {
-    const head = await client.getBlockNumber();
-    const logs = await readLogsInChunks(
-      (fromBlock, toBlock) => client.getLogs({ address: contract, fromBlock, toBlock }),
-      startBlock,
-      head,
-    );
-    return { ok: true as const, value: decodeProductLogs(logs) };
-  } catch (error) {
-    if (error instanceof LogsUnavailable || isTransportFailure(error)) return { ok: false as const };
-    return { ok: false as const };
-  }
-}
-
-function pendingView(pending: PendingStruct, logs: ProductLog[]) {
-  const proposed = [...logs].reverse().find((log) => log.eventName === "CustodyTransferProposed");
-  return {
-    from: pending.from,
-    to: pending.to,
-    proposedAt: asBigint(pending.proposedAt) ?? 0n,
-    txHash: proposed?.transactionHash ?? null,
-  };
-}
-
-function recallView(log: ProductLog | undefined, logsUnavailable: boolean) {
-  if (logsUnavailable || !log) return null;
-  const recalledBy = asAddress(log.args.recalledBy);
-  if (!recalledBy) return null;
-  return {
-    reason: typeof log.args.reason === "string" ? log.args.reason : "",
-    txHash: log.transactionHash,
-    pendingCleared: log.args.pendingCleared === true,
-    recalledBy,
-  };
-}
-
-function toHandoff(row: HistoryStruct): { from: string; to: string; timestamp: bigint } {
-  return { from: row.from, to: row.to, timestamp: asBigint(row.timestamp) ?? 0n };
-}
-
-function statusName(status: number): "active" | "recalled" | "none" {
-  if (status === 1) return "active";
-  if (status === 2) return "recalled";
-  return "none";
-}
-
-async function readOptional<T>(read: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> {
-  try {
-    return { ok: true, value: await read() };
-  } catch {
-    return { ok: false };
-  }
-}
-
-function isTransportFailure(error: unknown): boolean {
-  if (error instanceof BaseError) {
-    const reverted = error.walk((item) => item instanceof ContractFunctionRevertedError);
-    if (reverted) return false;
-  }
-  const text = error instanceof Error ? `${error.name} ${error.message}` : String(error);
-  if (/reverted|returned no data|execution reverted/i.test(text)) return false;
-  return /fetch|HTTP request|network|timeout|ECONNREFUSED|Failed to fetch|headers/i.test(text);
+  const client = readClient(chainId);
+  const [admin, manufacturer, recall] = await Promise.all(
+    [DEFAULT_ADMIN_ROLE, MANUFACTURER_ROLE, RECALL_ROLE].map((role) =>
+      client.readContract({
+        address: contract,
+        abi: productRegistryAbi,
+        functionName: "hasRole",
+        args: [role, account],
+      }),
+    ),
+  );
+  return { admin: admin === true, manufacturer: manufacturer === true, recall: recall === true };
 }

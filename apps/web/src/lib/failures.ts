@@ -1,7 +1,7 @@
 import { MetadataError } from "@proofchain/metadata";
 import { contractErrorText, walletRejected } from "./errors.ts";
 
-export const READER_FAILURE = "The site reader did not respond.";
+export const READER_FAILURE = "This site's readers did not respond. The batch is not shown as found or as missing.";
 
 export const DOCUMENT_UNAVAILABLE =
   "The product document is unavailable. Custody, status, hashes, and transactions above still come from the contract.";

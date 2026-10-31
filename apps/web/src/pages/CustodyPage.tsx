@@ -4,6 +4,7 @@ import { useState } from "react";
 import { getAddress, isAddress } from "viem";
 import { ConnectButton } from "../components/ConnectButton.tsx";
 import { Row, Rows } from "../components/Rows.tsx";
+import { SimulationNotice } from "../components/SimulationNotice.tsx";
 import { DEMO_DOCUMENT } from "../demo.ts";
 import { useSendAction } from "../lib/actions.ts";
 import { writeTarget, writeTargetMessage } from "../lib/deployments.ts";
@@ -66,6 +67,11 @@ export function CustodyPage() {
       functionName: "cancelCustodyTransfer",
       args: [computeBatchId(batchCode)],
     });
+    if (hash) await queryClient.invalidateQueries();
+  }
+
+  async function sendAnyway() {
+    const hash = await action.sendAnyway();
     if (hash) await queryClient.invalidateQueries();
   }
 
@@ -139,6 +145,9 @@ export function CustodyPage() {
           Cancel handoff
         </button>
       </div>
+      {action.stopped ? (
+        <SimulationNotice simulation={action.stopped} pending={action.pending} onSendAnyway={() => void sendAnyway()} />
+      ) : null}
       {shownError ? (
         <p className="revert" role="alert" data-testid="contract-error">
           {shownError}

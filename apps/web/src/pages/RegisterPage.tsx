@@ -6,12 +6,15 @@ import { ConnectButton } from "../components/ConnectButton.tsx";
 import { QrCard } from "../components/QrCard.tsx";
 import { Row, Rows } from "../components/Rows.tsx";
 import { DEMO_DOCUMENT } from "../demo.ts";
-import { submitAction } from "../lib/actions.ts";
+import { SimulationNotice } from "../components/SimulationNotice.tsx";
+import { simulateAction, submitAction, switchToWriteChain, type StoppedSimulation } from "../lib/actions.ts";
 import { writeTarget, writeTargetMessage } from "../lib/deployments.ts";
 import { registrationFailureText } from "../lib/failures.ts";
 import { originIsLoopback, parseOrigin, verificationUrl } from "../lib/format.ts";
 import { pinBlob, pinMetadata } from "../lib/pin.ts";
 import type { Address, Hex } from "viem";
+
+const PLACEHOLDER_CID = `bafkrei${"a".repeat(52)}`;
 
 type RegistrationReceipt = {
   batchCode: string;
@@ -42,15 +45,39 @@ export function RegisterPage() {
   );
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [stopped, setStopped] = useState<StoppedSimulation | null>(null);
+  const [simulated, setSimulated] = useState(false);
   const [receipt, setReceipt] = useState<RegistrationReceipt | null>(null);
 
   const parsedOrigin = parseOrigin(originField);
   const qrUrl =
     receipt && parsedOrigin ? verificationUrl(parsedOrigin, receipt.chainId, receipt.contract, receipt.batchCode) : null;
 
+  function buildDocument(imageCid: string): string {
+    const canonical = canonicalize({
+      schemaVersion: 1,
+      name: name.trim(),
+      sku: sku.trim(),
+      batchCode,
+      quantity: Number(quantity.trim()),
+      productionDate,
+      manufacturerName: manufacturerName.trim(),
+      description: description.trim(),
+      imageCid,
+    });
+    parseAndValidate(canonical);
+    return canonical;
+  }
+
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
+    await register(false);
+  }
+
+  async function register(skipSimulation: boolean) {
     setMessage(null);
+    setStopped(null);
+    setSimulated(false);
     if (!account.address) {
       setMessage("Connect a wallet before registering.");
       return;
@@ -65,23 +92,26 @@ export function RegisterPage() {
       if (!/^\d+$/.test(quantity.trim())) {
         throw new Error("Quantity must be an integer greater than or equal to 1.");
       }
+      if (file && file.size === 0) throw new Error("The optional file is empty.");
+      const walletChainId = await switchToWriteChain(current, account.chainId, (chainId) => switchChainAsync({ chainId }));
+      if (!skipSimulation) {
+        const draft = buildDocument(file ? PLACEHOLDER_CID : "");
+        const simulation = await simulateAction({
+          action: { functionName: "registerBatch", args: [batchCode, draft, PLACEHOLDER_CID] },
+          deployment: current,
+          account: account.address,
+        });
+        if (simulation.kind !== "passed") {
+          setStopped(simulation);
+          return;
+        }
+        setSimulated(true);
+      }
       let imageCid = "";
       if (file) {
-        if (file.size === 0) throw new Error("The optional file is empty.");
         imageCid = await pinBlob(new Uint8Array(await file.arrayBuffer()));
       }
-      const canonical = canonicalize({
-        schemaVersion: 1,
-        name: name.trim(),
-        sku: sku.trim(),
-        batchCode,
-        quantity: Number(quantity.trim()),
-        productionDate,
-        manufacturerName: manufacturerName.trim(),
-        description: description.trim(),
-        imageCid,
-      });
-      parseAndValidate(canonical);
+      const canonical = buildDocument(imageCid);
       const localHash = hashMetadata(canonical);
       const pinnedDocument = await pinMetadata(canonical, batchCode);
       pinned = true;
@@ -95,9 +125,10 @@ export function RegisterPage() {
         },
         deployment: current,
         account: account.address,
-        walletChainId: account.chainId,
+        walletChainId,
         switchChain: (chainId) => switchChainAsync({ chainId }),
         write: writeContractAsync,
+        skipSimulation: true,
       });
       setReceipt({
         batchCode,
@@ -203,6 +234,14 @@ export function RegisterPage() {
           {pending ? "Registering" : "Register batch"}
         </button>
       </form>
+      {simulated ? (
+        <p className="muted" data-testid="simulation-passed">
+          The simulation of registerBatch passed before anything was pinned.
+        </p>
+      ) : null}
+      {stopped ? (
+        <SimulationNotice simulation={stopped} pending={pending} onSendAnyway={() => void register(true)} />
+      ) : null}
       {message ? (
         <p className="revert" role="alert" data-testid="contract-error">
           {message}

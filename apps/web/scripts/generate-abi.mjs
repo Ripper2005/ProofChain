@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const workspace = resolve(scriptDir, "..", "..", "..");
 const artifactPath = resolve(workspace, "contracts/out/ProductRegistry.sol/ProductRegistry.json");
-const destination = resolve(scriptDir, "../src/contracts/ProductRegistry.ts");
+const destinations = [
+  resolve(scriptDir, "../src/contracts/ProductRegistry.ts"),
+  resolve(workspace, "packages/verifier/src/abi.ts"),
+];
 const artifact = JSON.parse(readFileSync(artifactPath, "utf8"));
 
 if (!Array.isArray(artifact.abi)) {
@@ -31,7 +34,6 @@ for (const name of [
   }
 }
 
-mkdirSync(dirname(destination), { recursive: true });
 const source = `// Generated from contracts/out/ProductRegistry.sol/ProductRegistry.json.
 // Regenerate with: pnpm --dir apps/web generate:abi
 // Do not edit by hand.
@@ -40,5 +42,8 @@ import type { Abi } from "viem";
 
 export const productRegistryAbi = ${JSON.stringify(artifact.abi, null, 2)} as const satisfies Abi;
 `;
-writeFileSync(destination, source);
-console.log(`Wrote ${destination}`);
+for (const destination of destinations) {
+  mkdirSync(dirname(destination), { recursive: true });
+  writeFileSync(destination, source);
+  console.log(`Wrote ${destination}`);
+}

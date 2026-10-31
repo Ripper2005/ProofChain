@@ -1,8 +1,9 @@
-import { createConfig, custom, http } from "wagmi";
+import { listedReaders } from "@proofchain/verifier";
+import { createConfig, custom, fallback, http } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { defineChain } from "viem";
 import { sepolia } from "viem/chains";
-import { listedReaders, trustedDeployments } from "./lib/deployments.ts";
+import { trustedDeployments } from "./lib/deployments.ts";
 
 export const anvil = defineChain({
   id: 31337,
@@ -13,20 +14,21 @@ export const anvil = defineChain({
   },
 });
 
-const sepoliaReader = listedReaders(trustedDeployments(), sepolia.id)[0];
+const sepoliaReaders = listedReaders(trustedDeployments(), sepolia.id);
 
 export const wagmiConfig = createConfig({
   chains: [anvil, sepolia],
   connectors: [injected()],
   transports: {
     [anvil.id]: http("http://127.0.0.1:8545", { batch: false }),
-    [sepolia.id]: sepoliaReader
-      ? http(sepoliaReader, { batch: false })
-      : custom({
-          async request() {
-            throw new Error("trusted-deployments.json lists no Sepolia reader for this site.");
-          },
-        }),
+    [sepolia.id]:
+      sepoliaReaders.length > 0
+        ? fallback(sepoliaReaders.map((url) => http(url, { batch: false })))
+        : custom({
+            async request() {
+              throw new Error("trusted-deployments.json lists no Sepolia reader for this site.");
+            },
+          }),
   },
   ssr: false,
 });

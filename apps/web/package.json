@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@proofchain/metadata": "file:../../packages/metadata",
+    "@proofchain/verifier": "file:../../packages/verifier",
     "@tanstack/react-query": "5.90.5",
     "qrcode": "1.5.4",
     "react": "19.2.0",

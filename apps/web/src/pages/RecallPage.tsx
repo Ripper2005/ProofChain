@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAccount } from "wagmi";
 import { ConnectButton } from "../components/ConnectButton.tsx";
+import { SimulationNotice } from "../components/SimulationNotice.tsx";
 import { useSendAction } from "../lib/actions.ts";
 import { writeTarget, writeTargetMessage } from "../lib/deployments.ts";
 import { readRoles } from "../lib/reader.ts";
@@ -37,6 +38,11 @@ export function RecallPage() {
     if (hash) await queryClient.invalidateQueries();
   }
 
+  async function sendAnyway() {
+    const hash = await action.sendAnyway();
+    if (hash) await queryClient.invalidateQueries();
+  }
+
   const shownError = localError ?? action.error;
 
   return (
@@ -54,8 +60,8 @@ export function RecallPage() {
       <ConnectButton />
       {address && roles.data && !roles.data.recall ? (
         <p className="warning" data-testid="recall-role-warning">
-          This wallet does not hold the recall role. You can still submit. If the contract reverts, the error is shown
-          below.
+          This wallet does not hold the recall role. You can still submit. The simulation shows the contract's rejection
+          first, and Send anyway records it on-chain.
         </p>
       ) : null}
       <label className="field">
@@ -76,6 +82,9 @@ export function RecallPage() {
       <button type="button" onClick={() => void recall()} disabled={action.pending}>
         {action.pending ? "Submitting" : "Recall batch"}
       </button>
+      {action.stopped ? (
+        <SimulationNotice simulation={action.stopped} pending={action.pending} onSendAnyway={() => void sendAnyway()} />
+      ) : null}
       {shownError ? (
         <p className="revert" role="alert" data-testid="contract-error">
           {shownError}

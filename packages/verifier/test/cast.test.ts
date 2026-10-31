@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { decodeFunctionResult, parseAbiItem, type AbiParameter, type Hex } from "viem";
-import { productRegistryAbi } from "../src/contracts/ProductRegistry.ts";
-import { castGetBatch } from "../src/lib/format.ts";
+import { castGetBatch, productRegistryAbi } from "../src/index.ts";
 
 const CONTRACT = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 const MANUFACTURER = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
