@@ -7,8 +7,10 @@
     "node": ">=24"
   },
   "scripts": {
+    "check": "node scripts/check.mjs",
     "test": "pnpm --filter @proofchain/metadata --filter @proofchain/pin --filter @proofchain/indexer --filter @proofchain/web --if-present test",
     "dev": "pnpm --dir apps/web dev",
+    "dev:sepolia": "pnpm --dir apps/web dev:sepolia",
     "pin": "pnpm --dir services/pin start",
     "indexer": "pnpm --dir indexer start",
     "stack": "docker compose up --build"
