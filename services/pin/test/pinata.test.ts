@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { describe, it } from "node:test";
-import { loadConfig } from "../src/config.ts";
+import { loadConfig, PIN_VARIABLES, pinEnvironment } from "../src/config.ts";
 import { createPinataPinner } from "../src/pinata.ts";
 import { createService } from "../src/service.ts";
 
@@ -146,6 +146,24 @@ describe("configuration", () => {
       loadConfig({ PINATA_JWT: "jwt", PINATA_API_URL: "http://127.0.0.1:9999/v3" }).pinata?.apiUrl,
       "http://127.0.0.1:9999/v3",
     );
+  });
+
+  it("takes only the pin variables from the root .env, and the process environment wins", () => {
+    const file = [
+      "PRIVATE_KEY=0xnotforthepinservice",
+      "DATABASE_URL=postgres://elsewhere",
+      `PINATA_JWT=${SENTINEL_JWT}`,
+      "PORT=8788",
+      "PIN_REQUIRE_PUBLIC=false",
+    ].join("\n");
+    const env = pinEnvironment({ PORT: "18788", PRIVATE_KEY: "0xfromshell" }, file);
+    assert.deepEqual(Object.keys(env).sort(), [...PIN_VARIABLES].sort());
+    assert.equal(env.PINATA_JWT, SENTINEL_JWT);
+    assert.equal(env.PORT, "18788");
+    assert.equal(env.PIN_REQUIRE_PUBLIC, "false");
+    assert.ok(!JSON.stringify(env).includes("notforthepinservice"));
+    assert.ok(!JSON.stringify(env).includes("fromshell"));
+    assert.deepEqual(pinEnvironment({}, undefined), Object.fromEntries(PIN_VARIABLES.map((name) => [name, undefined])));
   });
 });
 

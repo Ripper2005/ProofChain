@@ -1,6 +1,18 @@
+import { parseEnv } from "node:util";
 import { PINATA_API_URL } from "./pinata.ts";
 
 export const LOCAL_IPFS_API_URL = "http://127.0.0.1:5001";
+
+// The root .env also holds PRIVATE_KEY, which this service must never receive.
+export const PIN_VARIABLES = ["PORT", "PIN_HOST", "IPFS_API_URL", "PINATA_JWT", "PIN_REQUIRE_PUBLIC", "PINATA_API_URL"];
+
+export function pinEnvironment(
+  processEnv: Record<string, string | undefined>,
+  envFileText: string | undefined,
+): Record<string, string | undefined> {
+  const fromFile = envFileText ? parseEnv(envFileText) : {};
+  return Object.fromEntries(PIN_VARIABLES.map((name) => [name, processEnv[name] ?? fromFile[name]]));
+}
 
 export type PinConfig = {
   port: number;

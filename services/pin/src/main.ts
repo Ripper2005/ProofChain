@@ -1,11 +1,14 @@
+import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
-import { loadConfig, type PinConfig } from "./config.ts";
+import { loadConfig, pinEnvironment, type PinConfig } from "./config.ts";
 import { MAX_BLOB_BYTES } from "./pinner.ts";
 import { createService } from "./service.ts";
 
+const rootEnvFile = new URL("../../../.env", import.meta.url);
+
 let config: PinConfig;
 try {
-  config = loadConfig(process.env);
+  config = loadConfig(pinEnvironment(process.env, existsSync(rootEnvFile) ? readFileSync(rootEnvFile, "utf8") : undefined));
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);
