@@ -5,6 +5,7 @@ import { originIsLoopback } from "../lib/format.ts";
 export function QrCard({ url, batchCode }: { url: string; batchCode: string }) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -33,6 +34,17 @@ export function QrCard({ url, batchCode }: { url: string; batchCode: string }) {
     link.click();
   }
 
+  async function copyUrl() {
+    if (!navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  }
+
   return (
     <div className="stack">
       <p className="mono" data-testid="verification-url">
@@ -45,10 +57,15 @@ export function QrCard({ url, batchCode }: { url: string; batchCode: string }) {
         </p>
       ) : null}
       {error ? <p className="revert">{error}</p> : null}
-      {dataUrl ? <img className="qr" src={dataUrl} alt={`QR code for ${batchCode}`} /> : <p>Generating the QR image.</p>}
-      <button type="button" onClick={download} disabled={!dataUrl}>
-        Download PNG
-      </button>
+      {dataUrl ? <img className="qr" src={dataUrl} alt={`QR code for ${batchCode}`} /> : <p>Generating the QR image…</p>}
+      <div className="actions">
+        <button type="button" onClick={download} disabled={!dataUrl}>
+          Download PNG
+        </button>
+        <button type="button" className="secondary" onClick={() => void copyUrl()}>
+          {copied ? "Copied link" : "Copy link"}
+        </button>
+      </div>
     </div>
   );
 }

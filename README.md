@@ -63,6 +63,22 @@ require a connected wallet. The hosted site does not include a pin service,
 so registration cannot complete there. To run the full write workflow
 (registration, handoff, recall), use the local Anvil setup described below.
 
+### Screenshots
+
+**Active batch verification (`PCB-2026-R02`)**
+
+![Active batch verification on Sepolia showing green seal, reader agreement, storage proof, and tamper simulation](docs/screenshots/verify-active.png)
+
+**Recalled batch & multi-hop custody timeline (`PCB-2026-R01`)**
+
+![Recalled batch verification on Sepolia showing recall reason and A to B to C custody timeline](docs/screenshots/verify-recalled.png)
+
+**Custody handoff console & mobile QR scanner view**
+
+| Custody console | Mobile verification (`390×844`) |
+| --- | --- |
+| ![Custody handoff console inspecting PCB-2026-R02](docs/screenshots/custody-handoff.png) | <img src="docs/screenshots/verify-mobile.png" alt="Mobile verification page for PCB-2026-R02 at 390x844" width="280" /> |
+
 ## Architecture
 
 ```mermaid

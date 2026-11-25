@@ -3,6 +3,7 @@ import { DEFAULT_ADMIN_ROLE, MANUFACTURER_ROLE, RECALL_ROLE } from "@proofchain/
 import { createPublicClient, fallback, http, type Address } from "viem";
 import { productRegistryAbi } from "../contracts/ProductRegistry.ts";
 import { readerUrls } from "./deployments.ts";
+import { contractErrorText, isContractRevert } from "./errors.ts";
 
 export type LoadedBatch = {
   batchCode: string;
@@ -11,6 +12,12 @@ export type LoadedBatch = {
   status: "active" | "recalled" | "none";
   pending: { from: Address; to: Address; proposedAt: bigint } | null;
 };
+
+export type BatchLookupResult =
+  | { kind: "found"; batch: LoadedBatch }
+  | { kind: "not-registered"; batchCode: string; errorText: string };
+
+type BatchReadClient = Pick<ReturnType<typeof createPublicClient>, "readContract">;
 
 function readClient(chainId: number) {
   const urls = readerUrls(chainId);
@@ -27,16 +34,33 @@ export async function checkedClient(chainId: number) {
   return client;
 }
 
-export async function loadBatch(chainId: number, contract: Address, batchCode: string): Promise<LoadedBatch> {
+export async function loadBatch(
+  chainId: number,
+  contract: Address,
+  batchCode: string,
+  connect: (chainId: number) => Promise<BatchReadClient> = checkedClient,
+): Promise<BatchLookupResult> {
   if (!validateBatchCode(batchCode)) throw new Error("InvalidBatchCode");
-  const client = await checkedClient(chainId);
+  const client = await connect(chainId);
   const batchId = computeBatchId(batchCode);
-  const batch = await client.readContract({
-    address: contract,
-    abi: productRegistryAbi,
-    functionName: "getBatch",
-    args: [batchId],
-  });
+  let batch;
+  try {
+    batch = await client.readContract({
+      address: contract,
+      abi: productRegistryAbi,
+      functionName: "getBatch",
+      args: [batchId],
+    });
+  } catch (error) {
+    if (isContractRevert(error)) {
+      const errorText = contractErrorText(error);
+      if (errorText.startsWith("BatchNotFound")) {
+        return { kind: "not-registered", batchCode, errorText };
+      }
+      throw new Error(errorText);
+    }
+    throw error;
+  }
   const pending = await client.readContract({
     address: contract,
     abi: productRegistryAbi,
@@ -44,11 +68,14 @@ export async function loadBatch(chainId: number, contract: Address, batchCode: s
     args: [batchId],
   });
   return {
-    batchCode: batch.batchCode,
-    manufacturer: batch.manufacturer,
-    currentCustodian: batch.currentCustodian,
-    status: batch.status === 1 ? "active" : batch.status === 2 ? "recalled" : "none",
-    pending: pending.active ? { from: pending.from, to: pending.to, proposedAt: pending.proposedAt } : null,
+    kind: "found",
+    batch: {
+      batchCode: batch.batchCode,
+      manufacturer: batch.manufacturer,
+      currentCustodian: batch.currentCustodian,
+      status: batch.status === 1 ? "active" : batch.status === 2 ? "recalled" : "none",
+      pending: pending.active ? { from: pending.from, to: pending.to, proposedAt: pending.proposedAt } : null,
+    },
   };
 }
 

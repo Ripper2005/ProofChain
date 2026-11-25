@@ -10,24 +10,27 @@ export function SimulationNotice({
   onSendAnyway: () => void;
 }) {
   return (
-    <div className="revert" role="alert" data-testid="simulation-rejected">
+    <div className="revert stack-sm" role="alert" data-testid="simulation-rejected">
       {simulation.kind === "rejected" ? (
         <p>
-          The simulation says the contract would reject this call: <span className="mono">{simulation.text}</span>. The
-          wallet did not open and nothing was sent.
+          <strong>! Pre-flight simulation rejected:</strong>{" "}
+          <span className="mono">{simulation.text}</span>. The wallet did not open and nothing was sent.
         </p>
       ) : (
         <p>
-          The call could not be simulated, so the wallet did not open: <span className="mono">{simulation.text}</span>
+          <strong>! Pre-flight simulation could not run:</strong>{" "}
+          <span className="mono">{simulation.text}</span>. The wallet did not open.
         </p>
       )}
       <p className="muted">
         A simulation is a read at the latest block. Only a sent transaction becomes part of the record. Send anyway
-        opens the wallet with the same call, and a revert is then recorded on-chain.
+        opens the wallet with the same call so an expected revert can be tested on-chain.
       </p>
-      <button type="button" className="secondary" onClick={onSendAnyway} disabled={pending} data-testid="send-anyway">
-        Send anyway
-      </button>
+      <div className="actions">
+        <button type="button" className="secondary" onClick={onSendAnyway} disabled={pending} data-testid="send-anyway">
+          Send anyway
+        </button>
+      </div>
     </div>
   );
 }

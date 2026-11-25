@@ -1,5 +1,6 @@
-import { NavLink, Outlet, useMatch } from "react-router-dom";
-import { configurationErrors } from "../lib/deployments.ts";
+import { useEffect } from "react";
+import { Link, NavLink, Outlet, useLocation, useMatch } from "react-router-dom";
+import { configurationErrors, writeTarget } from "../lib/deployments.ts";
 
 const links = [
   { to: "/", label: "Home", end: true },
@@ -9,31 +10,73 @@ const links = [
 ];
 
 export function Shell() {
-  const verifying = useMatch("/verify/:chainId/:contractAddress/:batchCode");
+  const { pathname } = useLocation();
+  const verifyMatch = useMatch("/verify/:chainId/:contractAddress/:batchCode");
+  const target = writeTarget();
+  const envLabel =
+    target.kind === "ready" ? `${target.deployment.label} (${target.deployment.chainId})` : "Read-only mode";
+
+  useEffect(() => {
+    const batch = verifyMatch?.params.batchCode ? decodeURIComponent(verifyMatch.params.batchCode) : null;
+    const prefix =
+      pathname === "/"
+        ? "Home"
+        : pathname.startsWith("/register")
+          ? "Register Batch"
+          : pathname.startsWith("/custody")
+            ? "Custody Handoff"
+            : pathname.startsWith("/recall")
+              ? "Batch Recall"
+              : batch
+                ? `Verify ${batch}`
+                : "Verification";
+    document.title = `${prefix} | ProofChain`;
+  }, [pathname, verifyMatch]);
+
   return (
     <div className="wrap">
       <header className="site-header">
+        <a href="#main-content" className="skip-link visually-hidden">
+          Skip to main content
+        </a>
         <div>
-          <p className="brand">PROOFCHAIN</p>
-          <p className="brand-note">Shared custody log</p>
+          <div className="brand-row">
+            <Link className="brand" to="/">
+              PROOFCHAIN
+            </Link>
+            <span className="env-pill">{envLabel}</span>
+          </div>
+          <p className="brand-note">Shared custody log for product batches</p>
         </div>
-        <nav aria-label="Primary">
-          {links.map((link) => (
-            <NavLink key={link.to} to={link.to} end={link.end}>
-              {link.label}
-            </NavLink>
-          ))}
+        <nav className="site-nav" aria-label="Primary">
+          <ul>
+            {links.map((link) => (
+              <li key={link.to}>
+                <NavLink to={link.to} end={link.end}>
+                  {link.label}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
         </nav>
       </header>
-      <main>
+      <main id="main-content" tabIndex={-1} className="stack">
         {configurationErrors().map((error) => (
           <p key={error} className="warning" role="alert" data-testid="configuration-error">
             {error}
           </p>
         ))}
-        {verifying ? <p className="muted">Public verification does not use a wallet.</p> : null}
+        {verifyMatch ? (
+          <p className="notice">Public verification reads Ethereum and IPFS directly — no wallet is required.</p>
+        ) : null}
         <Outlet />
       </main>
+      <footer className="site-footer">
+        <p>
+          ProofChain records signed custody claims and document commitments on Ethereum. It does not verify physical
+          goods or manufacturer identity outside the signing wallet.
+        </p>
+      </footer>
     </div>
   );
 }

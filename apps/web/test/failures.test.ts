@@ -8,6 +8,7 @@ import { productRegistryAbi } from "../src/contracts/ProductRegistry.ts";
 import { simulateAction, SimulationStopped, submitAction, type Simulate } from "../src/lib/actions.ts";
 import { trustedDeployments, type Deployment } from "../src/lib/deployments.ts";
 import { contractErrorText } from "../src/lib/errors.ts";
+import { loadBatch } from "../src/lib/reader.ts";
 import {
   DOCUMENT_UNAVAILABLE,
   READER_FAILURE,
@@ -272,4 +273,32 @@ test("an unavailable document is shown as unavailable, and the seal follows the 
   assert.match(page, /result\.seal\.green \?/);
   assert.match(page, /\{SEAL_RULE\}/);
   assert.match(page, /data-testid="single-reader-note"/);
+});
+
+test("loadBatch returns not-registered on BatchNotFound instead of throwing a raw viem revert", async () => {
+  const data = encodeErrorResult({ abi: productRegistryAbi, errorName: "BatchNotFound", args: [BATCH_ID] });
+  const client = createPublicClient({
+    transport: custom({
+      async request({ method }) {
+        if (method === "eth_call") throw Object.assign(new Error("execution reverted"), { code: 3, data });
+        throw new Error(`unexpected ${method}`);
+      },
+    }, { retryCount: 0 }),
+  });
+
+  const missing = await loadBatch(31337, CONTRACT, "PCB-2026-001", async () => client);
+  assert.deepEqual(missing, {
+    kind: "not-registered",
+    batchCode: "PCB-2026-001",
+    errorText: `BatchNotFound(${BATCH_ID})`,
+  });
+
+  const rpcDown = createPublicClient({
+    transport: custom({
+      async request() {
+        throw new Error("network timeout");
+      },
+    }, { retryCount: 0 }),
+  });
+  await assert.rejects(loadBatch(31337, CONTRACT, "PCB-2026-001", async () => rpcDown), /network timeout/);
 });
